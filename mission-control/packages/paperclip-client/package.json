@@ -1,0 +1,30 @@
+{
+  "name": "@mc/paperclip-client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "pnpm build",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.mjs\" \"test/**/*.test.ts\"",
+    "lint": "echo 'sin lint propio'",
+    "test:live": "pnpm build && node --test --test-reporter=spec test/live.test.mjs"
+  },
+  "dependencies": {
+    "@mc/contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "24.19.1",
+    "tsx": "4.23.15"
+  }
+}

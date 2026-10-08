@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es" data-theme="ambar" data-scheme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>Mission Control</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <script>
+      // Aplica tema y layout guardados antes del primer pintado (evita parpadeo). Todo con try/catch.
+      (function () {
+        try {
+          var raw = localStorage.getItem('mc.ui.settings.v1');
+          var s = raw ? JSON.parse(raw) : {};
+          var root = document.documentElement;
+          if (s.theme) root.setAttribute('data-theme', s.theme);
+          var scheme = s.scheme || 'dark';
+          if (scheme === 'auto') scheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          if (s.theme === 'propio' && s.custom && /^#[0-9a-fA-F]{6}$/.test(s.custom.bg)) {
+            var n = parseInt(s.custom.bg.slice(1), 16);
+            var lin = function (v) { v = v / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+            var lum = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+            scheme = lum > 0.4 ? 'light' : 'dark';
+          }
+          root.setAttribute('data-scheme', scheme);
+          if (s.layout) root.setAttribute('data-layout', s.layout);
+          if (s.typography) root.setAttribute('data-type', s.typography);
+          if (s.textSize) root.setAttribute('data-size', s.textSize);
+          if (s.custom) {
+            root.style.setProperty('--c-accent', s.custom.accent);
+            root.style.setProperty('--c-bg', s.custom.bg);
+            root.style.setProperty('--c-ink', s.custom.ink);
+            root.style.setProperty('--c-accent-ink', '#111111');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,113 @@
+capabilities:
+  - id: BadCaseId
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr
+  - id: tipo-malo
+    nombre: "X"
+    tipo: gadget
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr
+  - id: sin-que-hace
+    nombre: "X"
+    tipo: skill
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr
+  - id: fecha-mala
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: 
+      - { fecha: "08/10/2026", donde: nube, resultado: "ok" }
+    procedencia: Pr
+  - id: compat-mala
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: { hermes: OK, zzz: FV }
+    evidencia: []
+    procedencia: Pr
+  - id: repetido
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr
+  - id: repetido
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr
+  - id: valida-al-lado
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr

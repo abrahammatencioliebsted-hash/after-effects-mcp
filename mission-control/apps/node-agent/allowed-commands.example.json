@@ -1,0 +1,26 @@
+[
+  {
+    "id": "hermes-version",
+    "label": "Versión de Hermes",
+    "description": "Ejecuta `hermes --version` para comprobar la instalación.",
+    "argv": ["hermes", "--version"],
+    "requiresConfirmation": true,
+    "timeoutSec": 10
+  },
+  {
+    "id": "hermes-gateway-status",
+    "label": "Estado del gateway de Hermes",
+    "description": "Ejecuta `hermes gateway status` (solo lectura).",
+    "argv": ["hermes", "gateway", "status"],
+    "requiresConfirmation": true,
+    "timeoutSec": 15
+  },
+  {
+    "id": "disk-usage",
+    "label": "Uso de disco (Linux/macOS)",
+    "description": "Muestra el uso de disco con `df -h`. En Windows usa: [\"powershell\", \"-NoProfile\", \"-Command\", \"Get-PSDrive -PSProvider FileSystem\"].",
+    "argv": ["df", "-h"],
+    "requiresConfirmation": true,
+    "timeoutSec": 15
+  }
+]

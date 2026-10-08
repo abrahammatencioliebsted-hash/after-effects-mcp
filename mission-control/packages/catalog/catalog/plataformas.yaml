@@ -1,0 +1,216 @@
+# Plataformas ejecutoras y modelos del piloto de Mission Control.
+# Regla: «probada» solo donde hay evidencia fechada de una prueba real. Todo lo demás es «pendiente»
+# (aún no comprobado en ese equipo) aunque exista documentación o un adaptador listado.
+# Evidencia de hoy (2026-10-08) = recorrido completo en el entorno Cloud (Linux, un solo equipo)
+# con MODELO SIMULADO detrás de Hermes: ver docs/06-evidencias.md.
+capabilities:
+  - id: hermes-api-server
+    nombre: "Hermes API server (nube)"
+    tipo: api
+    que_hace: "API HTTP de Hermes Agent (plataforma api_server del gateway): POST /v1/runs con Idempotency-Key, GET /v1/runs/{id}, eventos SSE y parada. Comprobado SOLO en el entorno Cloud con un modelo simulado; los equipos reales van en «hermes-api-server-equipos»."
+    necesita:
+      - "Hermes Agent instalado (uv, Python 3.14, extra aiohttp)"
+      - "platforms.api_server.enabled: true y clave de al menos 16 caracteres"
+      - "Un proveedor de modelo configurado (en la prueba: modelo simulado)"
+    ejecutores: [hermes]
+    equipos: [nube]
+    contexto: [A, B, C]
+    permisos:
+      lectura: ["Tareas que Paperclip le entrega por POST /v1/runs"]
+      escritura: ["Resultado del run (salida y uso de tokens)", "Estado y sesión en HERMES_HOME"]
+    consumo: sin-modelo
+    estado: probada
+    compatibilidad: { hermes: PF }
+    evidencia:
+      - fecha: "2026-10-08"
+        donde: nube
+        resultado: "POST /v1/runs → completed, SSE OK, 409 en duplicado"
+        referencia: "docs/06-evidencias.md"
+    version: "hermes-agent a28a5d03 (2026-10-07)"
+    fuente: "docs/09-hechos-tecnicos.md"
+    procedencia: H
+
+  - id: hermes-api-server-equipos
+    nombre: "Hermes API server en los equipos reales"
+    tipo: api
+    que_hace: "El mismo API server de Hermes, pero en los equipos del piloto. Pendiente: Windows, macOS, red Tailscale y HTTPS no se han probado; el Hermes del Mac está en v0.21.4 canary y no tiene el API server activado."
+    necesita:
+      - "Hermes instalado y actualizado en cada equipo"
+      - "api_server habilitado con clave propia por equipo (secreto cifrado en Paperclip)"
+      - "Tailscale + HTTPS (tailscale serve) para llegar desde Paperclip"
+      - "Guías en docs/04-runbooks/"
+    ejecutores: [hermes]
+    equipos: [win-principal, win-laptop-1, win-laptop-2, mac]
+    contexto: [A, B, C]
+    permisos:
+      lectura: ["Tareas entregadas por Paperclip"]
+      escritura: ["Resultado del run", "Estado y sesión en HERMES_HOME del equipo"]
+    consumo: suscripcion
+    estado: pendiente
+    compatibilidad: { hermes: FV }
+    evidencia: []
+    fuente: "docs/03-arquitectura.md"
+    procedencia: Pr
+
+  - id: paperclip-hermes-gateway
+    nombre: "Paperclip + adaptador hermes_gateway (nube)"
+    tipo: api
+    que_hace: "Adaptador integrado de Paperclip que llama al API server de Hermes por equipo con clave en secret_ref. Comprobado de punta a punta en la nube con modelo simulado (issue MIS-1 a done); el vigilante cortó los reintentos en 2/2. No soporta skills ni instrucciones en bundle."
+    necesita:
+      - "Paperclip (paperclipai 2026.1005.0) con Node >= 24.11"
+      - "Hermes API server alcanzable (HTTPS salvo loopback)"
+      - "Secreto con la clave del API server"
+    ejecutores: [hermes]
+    equipos: [nube]
+    contexto: [B, C]
+    permisos:
+      lectura: ["Issues y comentarios asignados al agente"]
+      escritura: ["Comentarios y estado de la issue", "Registro de runs y uso de tokens"]
+    consumo: sin-modelo
+    estado: probada
+    compatibilidad: { hermes: PF }
+    evidencia:
+      - fecha: "2026-10-08"
+        donde: nube
+        resultado: "POST /v1/runs → completed, SSE OK, 409 en duplicado"
+        referencia: "docs/06-evidencias.md"
+    version: "paperclipai 2026.1005.0"
+    fuente: "docs/09-hechos-tecnicos.md"
+    procedencia: H
+
+  - id: claude-code-local
+    nombre: "Claude Code local (adaptador claude_local)"
+    tipo: herramienta-local
+    que_hace: "Adaptador de Paperclip que lanza el CLI de Claude Code en el mismo equipo (inicio de sesión por suscripción o clave). Solo se sabe que el adaptador existe; no se ha ejecutado una tarea. [Pr] Equipo propuesto: Windows principal."
+    necesita:
+      - "Claude Code instalado y con sesión iniciada en el equipo"
+      - "Paperclip en el mismo equipo"
+    ejecutores: [claude]
+    equipos: [win-principal]
+    contexto: [A, B, C]
+    permisos:
+      lectura: ["Carpeta de trabajo de la tarea"]
+      escritura: ["Archivos de la carpeta de trabajo", "Comentarios de la issue"]
+    consumo: suscripcion
+    estado: pendiente
+    compatibilidad: { claude: FV }
+    evidencia:
+      - fecha: "2026-10-08"
+        donde: documentacion
+        resultado: "Paperclip GET /api/adapters lista el adaptador claude_local; no se ha ejecutado ninguna tarea con él."
+        referencia: "docs/09-hechos-tecnicos.md"
+    fuente: "docs/03-arquitectura.md"
+    procedencia: F
+
+  - id: codex-local
+    nombre: "Codex local (adaptador codex_local)"
+    tipo: herramienta-local
+    que_hace: "Adaptador de Paperclip que lanza Codex en el mismo equipo. Solo se sabe que el adaptador existe; no se ha ejecutado una tarea. La app de ChatGPT/Codex consta como instalada pero sin acceso a su contenido. [Pr] Equipo propuesto: Windows principal."
+    necesita:
+      - "Codex instalado y con sesión iniciada en el equipo"
+      - "Paperclip en el mismo equipo"
+    ejecutores: [codex]
+    equipos: [win-principal]
+    contexto: [A, B, C]
+    permisos:
+      lectura: ["Carpeta de trabajo de la tarea"]
+      escritura: ["Archivos de la carpeta de trabajo", "Comentarios de la issue"]
+    consumo: suscripcion
+    estado: pendiente
+    compatibilidad: { codex: FV }
+    evidencia:
+      - fecha: "2026-10-08"
+        donde: documentacion
+        resultado: "Paperclip GET /api/adapters lista el adaptador codex_local; no se ha ejecutado ninguna tarea con él."
+        referencia: "docs/09-hechos-tecnicos.md"
+    fuente: "docs/03-arquitectura.md"
+    procedencia: F
+
+  - id: grok-local
+    nombre: "Grok local (adaptador grok_local)"
+    tipo: herramienta-local
+    que_hace: "Adaptador grok_local de Paperclip = CLI de xAI Grok Build (`grok`). Solo se sabe que el adaptador existe; no se ha ejecutado una tarea. Grok Bot (app de escritorio, sin API ni CLI) queda fuera: ver grok-bot-manual. [Pr] Equipo propuesto: Windows principal."
+    necesita:
+      - "CLI grok (Grok Build) instalada e iniciada sesión en el equipo"
+      - "autorización del usuario para instalar"
+    ejecutores: [grok]
+    equipos: [win-principal]
+    contexto: [A, B, C]
+    permisos:
+      lectura: ["Carpeta de trabajo de la tarea"]
+      escritura: ["Archivos de la carpeta de trabajo", "Comentarios de la issue"]
+    consumo: suscripcion
+    estado: pendiente
+    compatibilidad: { grok: FV }
+    evidencia:
+      - fecha: "2026-10-08"
+        donde: documentacion
+        resultado: "Paperclip GET /api/adapters lista el adaptador grok_local con cuatro modelos; no se ha ejecutado ninguna tarea con él."
+        referencia: "docs/09-hechos-tecnicos.md"
+    fuente: "docs/03-arquitectura.md"
+    procedencia: F
+
+  - id: grok-bot-manual
+    nombre: "Grok Bot (solo uso manual)"
+    tipo: herramienta-local
+    que_hace: "solo uso manual: MC entrega un paquete de delegación para pegar. Grok Bot no tiene API, CLI ni webhook documentados, así que MC no puede controlarlo; por eso el estado es incompatible para control desde MC."
+    necesita:
+      - "Grok Bot instalado en el Mac"
+      - "Una persona que pegue el paquete de delegación y devuelva el resultado"
+    ejecutores: [grok]
+    equipos: [mac]
+    contexto: [B, C]
+    permisos:
+      lectura: ["Paquete de delegación que la persona pega"]
+      escritura: []
+    consumo: suscripcion
+    estado: incompatible
+    compatibilidad: { grok: NC }
+    evidencia: []
+    fuente: "docs.x.ai/grok-bot"
+    procedencia: F
+
+  - id: mimo-token-plan-via-hermes
+    nombre: "MiMo (Token Plan) como modelo de Hermes"
+    tipo: modelo
+    que_hace: "Modelo mimo-v2.6-pro dentro de Hermes (proveedor xiaomi o custom con base_url del Token Plan). No tiene adaptador propio en Paperclip y no se ha llamado desde MC. RIESGO DE TÉRMINOS [F]: la documentación del Token Plan limita la cuota a herramientas de programación y prohíbe scripts automatizados y backends de apps propias, con riesgo de suspensión; un ejecutor de MC o un cron de Hermes podría caer ahí. Decisión pendiente (P06 en docs/07-decisiones.md)."
+    necesita:
+      - "Cuenta con Token Plan de MiMo"
+      - "XIAOMI_API_KEY y XIAOMI_BASE_URL (o model.provider custom) en el perfil de Hermes"
+      - "Decisión sobre el riesgo de términos antes de usarlo en trabajos automáticos"
+    ejecutores: [hermes, mimo]
+    equipos: [win-principal, win-laptop-1, win-laptop-2, mac]
+    contexto: [A, B, C]
+    permisos:
+      lectura: ["Prompt e instrucciones que Hermes le envía"]
+      escritura: []
+    consumo: suscripcion
+    estado: pendiente
+    compatibilidad: { hermes: FV, mimo: NC }
+    evidencia: []
+    fuente: "docs/02-componentes-y-estado.md"
+    procedencia: F
+
+  - id: modelo-simulado-stub
+    nombre: "Modelo simulado (stub determinista) — SIMULADO"
+    tipo: modelo
+    que_hace: "SIMULADO. Servidor OpenAI-compatible que devuelve respuestas fijas para el laboratorio; NO es un modelo real y no demuestra calidad de respuesta ni uso de herramientas. Sirve para probar el recorrido Paperclip, Hermes y SSE sin gastar crédito."
+    necesita:
+      - "Proceso del stub en marcha (lab/)"
+      - "Hermes con model.provider custom apuntando al stub"
+    ejecutores: [hermes]
+    equipos: [nube]
+    contexto: [C]
+    permisos:
+      lectura: ["Prompt que Hermes le envía"]
+      escritura: []
+    consumo: sin-modelo
+    estado: probada
+    compatibilidad: { hermes: PF }
+    evidencia:
+      - fecha: "2026-10-08"
+        donde: nube
+        resultado: "SIMULADO: el stub respondió a Hermes y permitió el recorrido completo (POST /v1/runs → completed, SSE OK, 409 en duplicado)"
+        referencia: "docs/06-evidencias.md"
+    fuente: "docs/03-arquitectura.md"
+    procedencia: H

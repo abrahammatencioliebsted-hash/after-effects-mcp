@@ -1,0 +1,166 @@
+# Herramientas, conectores y MCP. Todas «pendiente»: ninguna se ha probado desde un ejecutor de MC.
+# Las lecturas con conectores de Claude Cowork del 8 oct son de OTRO entorno de ejecución
+# y no cuentan como prueba aquí.
+capabilities:
+  - id: obsidian-lectura
+    nombre: "Lectura de la bóveda de Obsidian"
+    tipo: herramienta-local
+    que_hace: "Leer notas Markdown de la bóveda del equipo (Sistema/, Trabajo/, Proyectos/) como contexto de nivel A/B. Nunca se copia Privado/. En Cowork la bóveda se leyó y escribió el 8 oct (otro entorno); desde un ejecutor de MC no se ha probado. La copia de la bóveda del PC Windows puede ir por delante de la del Mac; la sincronización no está certificada."
+    necesita:
+      - "Bóveda presente en el equipo (Mac o Windows principal)"
+      - "Ruta permitida configurada para el agente"
+    ejecutores: [hermes, claude, codex, grok]
+    equipos: [mac, win-principal]
+    contexto: [A, B]
+    permisos:
+      lectura: ["Notas de la bóveda excepto Privado/"]
+      escritura: []
+    consumo: sin-modelo
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    fuente: "Sistema/Sistema de agentes/E1 — Diagnóstico.md"
+    procedencia: H
+
+  - id: drive-lectura
+    nombre: "Google Drive (solo lectura)"
+    tipo: conector
+    que_hace: "Buscar y leer archivos de Google Drive. Conectado en Claude; la lectura se probó desde Claude Cowork el 8 oct (otro entorno). Desde ejecutores de MC no está conectado ni probado."
+    necesita:
+      - "Cuenta de Google conectada en la plataforma ejecutora"
+      - "Conector o MCP de Drive disponible para ese ejecutor"
+    ejecutores: [claude, hermes, codex, grok]
+    equipos: [win-principal, mac]
+    contexto: [B, C]
+    permisos:
+      lectura: ["Archivos de Drive que la cuenta pueda ver"]
+      escritura: []
+    consumo: sin-modelo
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    fuente: "Sistema/Sistema de agentes/E1 — Diagnóstico.md"
+    procedencia: H
+
+  - id: calendar-lectura
+    nombre: "Google Calendar (solo lectura)"
+    tipo: conector
+    que_hace: "Leer eventos de los calendarios (principal y uno «Taskade»). Lectura probada desde Claude Cowork el 8 oct (otro entorno); sin conexión ni prueba en ejecutores de MC."
+    necesita:
+      - "Cuenta de Google conectada en la plataforma ejecutora"
+      - "Conector o MCP de Calendar disponible para ese ejecutor"
+    ejecutores: [claude, hermes, codex, grok]
+    equipos: [win-principal, mac]
+    contexto: [B, C]
+    permisos:
+      lectura: ["Eventos de los calendarios de la cuenta"]
+      escritura: []
+    consumo: sin-modelo
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    fuente: "Sistema/Sistema de agentes/E1 — Diagnóstico.md"
+    procedencia: H
+
+  - id: notion-lectura
+    nombre: "Notion (solo lectura)"
+    tipo: conector
+    que_hace: "Buscar y leer páginas del workspace de Notion (vigencia mixta). Las notas dicen que la lectura se probó desde Claude Cowork el 8 oct, que es otro entorno de ejecución; por eso aquí queda «pendiente» hasta probarla desde un ejecutor de MC."
+    necesita:
+      - "Workspace de Notion conectado en la plataforma ejecutora"
+      - "Conector o MCP de Notion disponible para ese ejecutor"
+    ejecutores: [claude, hermes, codex, grok]
+    equipos: [win-principal, mac]
+    contexto: [B, C]
+    permisos:
+      lectura: ["Páginas y bases de Notion compartidas con la integración"]
+      escritura: []
+    consumo: sin-modelo
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    fuente: "Sistema/Sistema de agentes/E1 — Diagnóstico.md"
+    procedencia: H
+
+  - id: slack-entrada
+    nombre: "Slack como entrada de peticiones"
+    tipo: conector
+    que_hace: "Recibir peticiones desde Slack y convertirlas en misiones. El conector existe en Claude pero figura como «no probado»; no hay app de Slack ni credenciales configuradas para MC."
+    necesita:
+      - "App de Slack con permisos acordados"
+      - "Token guardado como secreto, nunca en el repositorio"
+      - "Decisión sobre canales permitidos"
+    ejecutores: [operador]
+    equipos: [win-principal]
+    contexto: [C]
+    permisos:
+      lectura: ["Mensajes de los canales permitidos"]
+      escritura: ["Respuestas en el hilo de la petición"]
+    consumo: sin-modelo
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    fuente: "docs/03-arquitectura.md"
+    procedencia: Pr
+
+  - id: registro-de-elecciones-lectura
+    nombre: "Lector del Registro de elecciones (solo lectura)"
+    tipo: herramienta-local
+    que_hace: "El BFF lee Registro de elecciones.md y muestra las ideas «sin decisión tuya» en la pestaña Ideas. Nunca escribe y nunca convierte una idea en misión por su cuenta. Aún no probado contra el archivo real."
+    necesita:
+      - "Ruta del archivo en MC_ELECTIONS_FILE"
+      - "Copia del archivo accesible desde el equipo del BFF"
+    ejecutores: [operador]
+    equipos: [win-principal]
+    contexto: [A]
+    permisos:
+      lectura: ["Registro de elecciones.md"]
+      escritura: []
+    consumo: sin-modelo
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    fuente: "docs/08-contrato-bff.md"
+    procedencia: C
+
+  - id: paperclip-mcp-server
+    nombre: "Servidor MCP de Paperclip"
+    tipo: mcp
+    que_hace: "Expone la API de Paperclip como herramientas MCP para que un agente cree o comente issues. Existe según la inspección del paquete; no se ha lanzado ni conectado a ningún ejecutor. Requiere gobernanza de acceso MCP por agente."
+    necesita:
+      - "Paperclip en marcha"
+      - "Permisos del agente para usar MCP"
+      - "Ejecutor con soporte MCP configurado"
+    ejecutores: [claude, codex, hermes]
+    equipos: [win-principal]
+    contexto: [B, C]
+    permisos:
+      lectura: ["Issues, comentarios y agentes de la empresa de Paperclip"]
+      escritura: ["Issues y comentarios (según permisos del agente)"]
+    consumo: sin-modelo
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    fuente: "docs/03-arquitectura.md"
+    procedencia: F
+
+  - id: nvidia-gpu-local
+    nombre: "Modelo local en GPU NVIDIA (Windows principal)"
+    tipo: modelo
+    que_hace: "Modelos locales (p. ej. con Ollama) detrás de Hermes usando la GPU de 24 GB de VRAM de la Windows principal, como proveedor custom. No se ha instalado ni medido nada; el límite de trabajos pesados simultáneos (maxHeavyJobs) sigue por acordar."
+    necesita:
+      - "Controladores NVIDIA y Ollama (u otro servidor local) instalados"
+      - "Modelo descargado que quepa en 24 GB de VRAM"
+      - "Hermes con model.provider custom hacia el servidor local"
+    ejecutores: [hermes]
+    equipos: [win-principal]
+    contexto: [C]
+    permisos:
+      lectura: ["Prompt que Hermes le envía"]
+      escritura: []
+    consumo: local
+    estado: pendiente
+    compatibilidad: { hermes: FV }
+    evidencia: []
+    fuente: "docs/03-arquitectura.md"
+    procedencia: Pr

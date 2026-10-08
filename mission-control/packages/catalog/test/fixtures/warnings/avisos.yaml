@@ -1,0 +1,43 @@
+capabilities:
+  - id: probada-sin-evidencia
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: probada
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr
+  - id: pf-sin-evidencia
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: [mac]
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: { hermes: PF }
+    evidencia: []
+    procedencia: Pr
+  - id: sin-equipos
+    nombre: "X"
+    tipo: skill
+    que_hace: "Algo"
+    necesita: []
+    ejecutores: [hermes]
+    equipos: []
+    contexto: [A]
+    permisos: { lectura: [], escritura: [] }
+    consumo: local
+    estado: pendiente
+    compatibilidad: {}
+    evidencia: []
+    procedencia: Pr

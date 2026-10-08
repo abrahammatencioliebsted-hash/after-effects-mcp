@@ -1,0 +1,13 @@
+{
+  "name": "@mc/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pruebas de integración y de fallos de Mission Control contra el Paperclip vivo con el mock de Hermes.",
+  "scripts": {
+    "test": "node --test --test-reporter=spec \"test/*.test.mjs\"",
+    "test:lab": "node --test --test-reporter=spec --test-timeout=2400000 lab/fallos.test.mjs",
+    "lint": "echo 'sin lint propio'",
+    "typecheck": "echo 'sin tipos (mjs)'"
+  }
+}
