@@ -1,0 +1,25 @@
+{
+  "name": "mission-control",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mission Control personal: panel, catálogo y pegamento sobre Paperclip para coordinar Hermes, Claude, Codex, Grok y MiMo en varios equipos.",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=24.11.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r build && pnpm -r test",
+    "lint": "pnpm -r lint",
+    "dev:bff": "pnpm --filter @mc/bff dev",
+    "dev:ui": "pnpm --filter @mc/ui dev",
+    "catalog:validate": "pnpm --filter @mc/catalog validate",
+    "lab:e2e": "node lab/e2e.mjs"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

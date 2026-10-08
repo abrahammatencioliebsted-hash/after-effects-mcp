@@ -1,0 +1,39 @@
+{
+  "name": "@mc/catalog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node dist/cli.js schema --out schema/capability.schema.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --test-reporter=spec \"test/*.test.mjs\"",
+    "lint": "echo 'sin lint propio'",
+    "validate": "node dist/cli.js validate ./catalog",
+    "pretest": "pnpm build"
+  },
+  "dependencies": {
+    "@mc/contracts": "workspace:*",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "24.19.1",
+    "tsx": "4.23.15"
+  },
+  "bin": {
+    "mc-catalog": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schema",
+    "catalog"
+  ]
+}

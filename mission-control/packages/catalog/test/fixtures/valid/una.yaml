@@ -1,0 +1,14 @@
+id: una-sola
+nombre: "X"
+tipo: skill
+que_hace: "Algo"
+necesita: []
+ejecutores: [hermes]
+equipos: [mac]
+contexto: [A]
+permisos: { lectura: [], escritura: [] }
+consumo: local
+estado: pendiente
+compatibilidad: {}
+evidencia: []
+procedencia: Pr

@@ -1,0 +1,15 @@
+# Plantilla de HERMES_HOME para el laboratorio (modelo SIMULADO). Copiar a una carpeta vacía y
+# definir API_SERVER_KEY y OPENAI_API_KEY en .env (ver lab/README.md). No contiene secretos.
+model:
+  provider: "custom"
+  base_url: "http://127.0.0.1:8700/v1"
+  default: "stub-model"
+agent:
+  reasoning_effort: "low"
+platforms:
+  api_server:
+    enabled: true
+    extra:
+      host: "127.0.0.1"
+      port: 8642
+      # La clave se toma de API_SERVER_KEY en .env (mínimo 16 caracteres).

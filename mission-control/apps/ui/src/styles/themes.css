@@ -1,0 +1,105 @@
+/* Tokens de color y tipografía. TODO color de la UI sale de estas variables (data-theme × data-scheme). */
+
+:root {
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --fs: 15px;
+  --r-lg: 16px;
+  --r-md: 12px;
+  --r-sm: 8px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  color-scheme: dark;
+}
+
+:root[data-type="sistema"] { --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+:root[data-type="humanista"] { --font: "Segoe UI Variable", "Gill Sans", "Gill Sans MT", Candara, "Trebuchet MS", sans-serif; }
+:root[data-type="tecnica"] { --font: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace; }
+:root[data-type="editorial"] { --font: Charter, "Bitstream Charter", "Iowan Old Style", Georgia, serif; }
+:root[data-size="sm"] { --fs: 14px; }
+:root[data-size="md"] { --fs: 15px; }
+:root[data-size="lg"] { --fs: 16.5px; }
+
+/* ---------- Semánticos por esquema (estado = ícono + texto + color; el color nunca va solo) ---------- */
+:root, :root[data-scheme="dark"] {
+  color-scheme: dark;
+  --ok: #34c759; --warn: #fab219; --crit: #ff5a5f; --info: #7ab0ff;
+  --shadow: 0 1px 0 rgb(255 255 255 / 4%) inset, 0 12px 32px -16px rgb(0 0 0 / 70%);
+  --scrim: rgb(4 3 2 / 66%);
+}
+:root[data-scheme="light"] {
+  color-scheme: light;
+  --ok: #0a7d2c; --warn: #9a6200; --crit: #c42b31; --info: #1f5fbf;
+  --shadow: 0 1px 2px rgb(30 20 0 / 6%), 0 10px 28px -14px rgb(30 20 0 / 22%);
+  --scrim: rgb(24 18 8 / 42%);
+}
+
+/* ---------- Ámbar (por defecto) ---------- */
+:root[data-theme="ambar"][data-scheme="dark"], :root:not([data-theme]) {
+  --bg: #0c0a07; --bg-2: #110e0a; --panel: #17130e; --panel-2: #1e1912; --panel-3: #272017;
+  --line: #2a241a; --line-strong: #3b3325;
+  --text: #f5efe4; --text-2: #c6bcaa; --text-3: #968b79;
+  --accent: #ffb020; --accent-ink: #1b1200; --idle: #c98f66; --warn: #ff8a4c;
+}
+:root[data-theme="ambar"][data-scheme="light"] {
+  --bg: #f4efe6; --bg-2: #fbf8f2; --panel: #fffdf9; --panel-2: #f7f2e8; --panel-3: #efe8da;
+  --line: #e4dccb; --line-strong: #cfc4ad;
+  --text: #1d1810; --text-2: #50473a; --text-3: #6e6350;
+  --accent: #a85f00; --accent-ink: #ffffff; --idle: #8a5a34; --warn: #a64a12;
+}
+
+/* ---------- Azul ---------- */
+:root[data-theme="azul"][data-scheme="dark"] {
+  --bg: #080c13; --bg-2: #0c121b; --panel: #101722; --panel-2: #172030; --panel-3: #1f2a3d;
+  --line: #1f2a3b; --line-strong: #2f3e56;
+  --text: #eaf0f9; --text-2: #b4c0d3; --text-3: #8795ad;
+  --accent: #4c9aff; --accent-ink: #04132b; --idle: #f0944d; --warn: #fab219;
+}
+:root[data-theme="azul"][data-scheme="light"] {
+  --bg: #eef2f8; --bg-2: #f7f9fc; --panel: #ffffff; --panel-2: #f1f4f9; --panel-3: #e5eaf2;
+  --line: #dbe2ee; --line-strong: #bfcadc;
+  --text: #111a29; --text-2: #3f4d63; --text-3: #5d6b82;
+  --accent: #1b62cc; --accent-ink: #ffffff; --idle: #a8530f; --warn: #94600a;
+}
+
+/* ---------- Propio: tres colores del usuario (--c-accent, --c-bg, --c-ink) ---------- */
+:root[data-theme="propio"] {
+  --bg: var(--c-bg, #0f1014);
+  --bg-2: color-mix(in srgb, var(--c-bg, #0f1014) 95%, var(--c-ink, #ececf1));
+  --panel: color-mix(in srgb, var(--c-bg, #0f1014) 91%, var(--c-ink, #ececf1));
+  --panel-2: color-mix(in srgb, var(--c-bg, #0f1014) 86%, var(--c-ink, #ececf1));
+  --panel-3: color-mix(in srgb, var(--c-bg, #0f1014) 80%, var(--c-ink, #ececf1));
+  --line: color-mix(in srgb, var(--c-bg, #0f1014) 84%, var(--c-ink, #ececf1));
+  --line-strong: color-mix(in srgb, var(--c-bg, #0f1014) 70%, var(--c-ink, #ececf1));
+  --text: var(--c-ink, #ececf1);
+  --text-2: color-mix(in srgb, var(--c-ink, #ececf1) 78%, var(--c-bg, #0f1014));
+  --text-3: color-mix(in srgb, var(--c-ink, #ececf1) 58%, var(--c-bg, #0f1014));
+  --accent: var(--c-accent, #8b5cf6);
+  --accent-ink: var(--c-accent-ink, #ffffff);
+  --idle: color-mix(in srgb, #e8955a 80%, var(--c-ink, #ececf1));
+}
+
+/* ---------- Derivados (iguales para todos los temas) ---------- */
+:root {
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --accent-softer: color-mix(in srgb, var(--accent) 7%, transparent);
+  --accent-line: color-mix(in srgb, var(--accent) 45%, transparent);
+  --glow: 0 0 0 1px var(--accent-line), 0 0 28px -6px color-mix(in srgb, var(--accent) 55%, transparent);
+  --track: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  --focus: var(--accent);
+
+  --tone-accent: var(--accent);
+  --tone-ok: var(--ok);
+  --tone-warn: var(--warn);
+  --tone-crit: var(--crit);
+  --tone-info: var(--info);
+  --tone-idle: var(--idle);
+  --tone-muted: var(--text-3);
+
+  /* Escala secuencial de un solo tono (acento → superficie) para mapas de calor */
+  --heat-0: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+  --heat-1: color-mix(in srgb, var(--accent) 30%, var(--panel-2));
+  --heat-2: color-mix(in srgb, var(--accent) 52%, var(--panel-2));
+  --heat-3: color-mix(in srgb, var(--accent) 76%, var(--panel-2));
+  --heat-4: var(--accent);
+}
