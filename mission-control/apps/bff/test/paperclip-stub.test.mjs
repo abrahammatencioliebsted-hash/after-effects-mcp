@@ -63,8 +63,9 @@ function fakeClient(state = {}) {
     listRoutines: async () => [],
     getDashboard: async () => ({ agents: {}, tasks: {}, costs: { monthSpendCents: 0, monthBudgetCents: 0, monthUtilizationPercent: 0 }, pendingApprovals: 0, budgets: {}, runActivity: [] }),
     health: async () => ({ status: 'ok', version: 'fake' }),
-    request: async (method, path) => {
-      rec('request', method, path);
+    request: async (method, path, opts) => {
+      rec('request', method, path, opts?.body);
+      if (state.requestError && path.endsWith('/wakeup')) throw state.requestError;
       return state.issueRuns?.[path] ?? [];
     },
   };
@@ -172,18 +173,72 @@ test('rechazar plan lo deja en briefing; aceptar, pedir cambios y detener usan u
   assert.equal(rerun.status, 200, 'una misión cancelada puede reintentarse');
 });
 
-test('rerun: reabre, invoca heartbeat con issueId y suma al contador', async () => {
+test('rerun: wakeup con idempotencyKey e issueId, suma al contador y candado de 60 s', async () => {
   const { app, client, services } = build(fakeClient());
   const m = await post(app, '/api/mc/missions', missionBody({ title: 'Reintentar' }));
   client.issues.get(m.body.id).status = 'blocked';
   const rr = await post(app, `/api/mc/missions/${m.body.id}/rerun`, { note: 'otra vez' });
   assert.equal(rr.status, 200, JSON.stringify(rr.body));
+  const wake = client.calls.find((c) => c.name === 'request' && c.args[1] === '/agents/a1/wakeup');
+  assert.ok(wake, 'usa la ruta wakeup');
+  assert.equal(wake.args[0], 'POST');
+  assert.equal(wake.args[2].idempotencyKey, `mc:rerun:${m.body.id}:1`);
+  assert.equal(wake.args[2].payload.issueId, m.body.id);
+  assert.equal(wake.args[2].issueId, m.body.id);
+  assert.equal(wake.args[2].source, 'on_demand');
+  assert.equal(wake.args[2].forceFreshSession, false);
+  assert.ok(!client.calls.some((c) => c.name === 'invokeHeartbeat'));
+  assert.equal(services.db.prepare('SELECT retry_count FROM missions_meta WHERE issue_id = ?').get(m.body.id).retry_count, 1);
+  assert.ok(rr.body.retryCount >= 1);
+  // dos clics seguidos: el segundo no crea otro run
+  client.issues.get(m.body.id).status = 'blocked';
+  const again = await post(app, `/api/mc/missions/${m.body.id}/rerun`, {});
+  assert.equal(again.status, 409);
+  assert.equal(again.body.details.code, 'rerun_locked');
+  assert.equal(client.calls.filter((c) => c.name === 'request' && c.args[1].endsWith('/wakeup')).length, 1);
+});
+
+test('rerun: si el build no tiene wakeup (404) cae a heartbeat/invoke; un fallo libera el candado', async () => {
+  const state = { requestError: new PaperclipError({ status: 404, code: 'not_found', message: 'no hay ruta' }) };
+  const { app, client } = build(fakeClient(state));
+  const m = await post(app, '/api/mc/missions', missionBody({ title: 'Sin wakeup' }));
+  client.issues.get(m.body.id).status = 'blocked';
+  const rr = await post(app, `/api/mc/missions/${m.body.id}/rerun`, {});
+  assert.equal(rr.status, 200, JSON.stringify(rr.body));
   const inv = client.calls.find((c) => c.name === 'invokeHeartbeat');
   assert.equal(inv.args[0], 'a1');
   assert.equal(inv.args[1].issueId, m.body.id);
-  assert.equal(inv.args[1].source, 'on_demand');
-  assert.equal(services.db.prepare('SELECT retry_count FROM missions_meta WHERE issue_id = ?').get(m.body.id).retry_count, 1);
-  assert.ok(rr.body.retryCount >= 1);
+  assert.equal(inv.args[1].idempotencyKey, `mc:rerun:${m.body.id}:1`);
+
+  state.requestError = new PaperclipError({ status: 0, code: 'unreachable', message: 'caído' });
+  client.issues.get(m.body.id).status = 'blocked';
+  assert.equal((await post(app, `/api/mc/missions/${m.body.id}/rerun`, {})).status, 409, 'candado vigente por el reintento anterior');
+});
+
+test('resultado: solo de un run exitoso; el comentario de un run fallido queda como mensaje "run fallido"', async () => {
+  const mk = (id, status) => ({ id, agentId: 'a1', status, invocationSource: 'assignment', startedAt: '2026-10-08T10:00:00.000Z', finishedAt: '2026-10-08T10:00:05.000Z', error: null, errorCode: null, usageJson: null, retryOfRunId: null, scheduledRetryAt: null, processLossRetryCount: 0, contextSnapshot: {} });
+  const state = {
+    runs: [mk('ok-run', 'succeeded'), mk('bad-run', 'failed')],
+    comments: [
+      { id: 'c-ok', body: 'Resultado bueno', authorType: 'agent', authorAgentId: 'a1', createdByRunId: 'ok-run', createdAt: '2026-10-08T10:00:06.000Z' },
+      { id: 'c-bad', body: 'Texto parcial truncado', authorType: 'agent', authorAgentId: 'a1', createdByRunId: 'bad-run', createdAt: '2026-10-08T10:01:00.000Z' },
+    ],
+  };
+  const client = fakeClient(state);
+  const { app } = build(client);
+  const m = await post(app, '/api/mc/missions', missionBody({ title: 'Con fallo' }));
+  state.issueRuns = { [`/issues/${m.body.id}/runs`]: [{ runId: 'ok-run' }, { runId: 'bad-run' }] };
+  client.issues.get(m.body.id).status = 'blocked';
+  const d = (await getJson(app, `/api/mc/missions/${m.body.id}`)).body;
+  assert.equal(d.result.body, 'Resultado bueno');
+  const bad = d.timeline.find((e) => e.id === 'cmt-c-bad');
+  assert.equal(bad.kind, 'message');
+  assert.match(bad.summary, /^\[run fallido\]/);
+  assert.match(bad.body, /run fallido/);
+  // si el único comentario es de un run fallido no hay resultado
+  state.comments = [state.comments[1]];
+  const d2 = (await getJson(app, `/api/mc/missions/${m.body.id}`)).body;
+  assert.equal(d2.result, undefined);
 });
 
 test('crear agente: permisos mínimos, topes diarios y metadatos; hermes exige URL y secreto', async () => {
@@ -194,6 +249,7 @@ test('crear agente: permisos mínimos, topes diarios y metadatos; hermes exige U
   assert.equal(body.adapterType, 'claude_local');
   assert.deepEqual(body.permissions, { canCreateAgents: false, canCreateSkills: false });
   assert.deepEqual(body.runtimeConfig, { heartbeat: { enabled: false, maxConcurrentRuns: 1, maxDailyRuns: 40, maxDailyCostCents: 500 } });
+  assert.equal(services.settings.get().agentDefaults.timeoutSec, 300);
   assert.equal(body.metadata.machineId, 'win-principal');
   assert.equal(body.metadata.platform, 'claude');
   assert.equal(claude.body.platform, 'claude');
@@ -214,6 +270,12 @@ test('crear agente: permisos mínimos, topes diarios y metadatos; hermes exige U
   const hb = client.calls.filter((c) => c.name === 'createAgent').pop().args[1];
   assert.equal(hb.adapterType, 'hermes_gateway');
   assert.equal(hb.adapterConfig.apiBaseUrl, 'https://win-laptop-1.tailnet.ts.net');
+  assert.equal(hb.adapterConfig.timeoutSec, 300, 'por defecto 300 s, no los 600 s del adaptador');
+  services.settings.put({ ...services.settings.get(), agentDefaults: { timeoutSec: 120 } });
+  assert.equal(services.settings.get().agentDefaults.timeoutSec, 120);
+  assert.equal(services.settings.get().agentDefaults.maxDailyRuns, 40);
+  await post(app, '/api/mc/agents', { name: 'H2', role: 'engineer', platform: 'hermes', machineId: 'win-laptop-1' });
+  assert.equal(client.calls.filter((c) => c.name === 'createAgent').pop().args[1].adapterConfig.timeoutSec, 120);
   assert.deepEqual(hb.adapterConfig.apiKey, { type: 'secret_ref', secretId: 'sec-uuid', version: 'latest' });
   assert.match(hb.adapterConfig.instructions, /mimo/);
   assert.ok(!JSON.stringify(hb).includes('apiKey":"'), 'nunca una clave literal');

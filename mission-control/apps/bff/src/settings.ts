@@ -12,10 +12,10 @@ export type SharedSettingsView = Omit<SharedSettings, 'modelPrices'> & {
   /** Ids (no valores) de los secretos de Paperclip que guardan la clave del API server de Hermes por equipo. */
   hermesSecretIds: Record<string, string>;
   /** Topes por defecto de los agentes que crea MC (hermes_gateway no informa precio: el presupuesto en centavos no se dispara, los topes de runs sí). */
-  agentDefaults: { maxDailyRuns: number; maxDailyCostCents: number };
+  agentDefaults: { maxDailyRuns: number; maxDailyCostCents: number; timeoutSec: number };
 };
 
-export const DEFAULT_AGENT_LIMITS = { maxDailyRuns: 40, maxDailyCostCents: 500 };
+export const DEFAULT_AGENT_LIMITS = { maxDailyRuns: 40, maxDailyCostCents: 500, timeoutSec: 300 };
 
 export const DEFAULT_SETTINGS: SharedSettings & { modelPrices: ModelPrice[] } = {
   ownerName: 'Operador',
@@ -66,7 +66,7 @@ export class SettingsStore {
       healthThresholds: s.healthThresholds ?? DEFAULT_SETTINGS.healthThresholds,
       vaultPaths: s.vaultPaths ?? DEFAULT_SETTINGS.vaultPaths,
       hermesSecretIds: this.allHermesSecrets(),
-      agentDefaults: (s as { agentDefaults?: SharedSettingsView['agentDefaults'] }).agentDefaults ?? DEFAULT_AGENT_LIMITS,
+      agentDefaults: { ...DEFAULT_AGENT_LIMITS, ...((s as { agentDefaults?: Partial<SharedSettingsView['agentDefaults']> }).agentDefaults ?? {}) },
     };
   }
 
@@ -91,10 +91,11 @@ export class SettingsStore {
     }
     if (b.bossAgentId !== undefined && typeof b.bossAgentId !== 'string') throw badRequest('bossAgentId debe ser texto');
     const ad = asRecord(b.agentDefaults);
-    const prev = this.stored() as { agentDefaults?: SharedSettingsView['agentDefaults'] };
+    const prev = this.stored() as { agentDefaults?: Partial<SharedSettingsView['agentDefaults']> };
     const agentDefaults = {
       maxDailyRuns: typeof ad.maxDailyRuns === 'number' && ad.maxDailyRuns >= 1 ? Math.floor(ad.maxDailyRuns) : (prev.agentDefaults?.maxDailyRuns ?? DEFAULT_AGENT_LIMITS.maxDailyRuns),
       maxDailyCostCents: typeof ad.maxDailyCostCents === 'number' && ad.maxDailyCostCents >= 0 ? Math.floor(ad.maxDailyCostCents) : (prev.agentDefaults?.maxDailyCostCents ?? DEFAULT_AGENT_LIMITS.maxDailyCostCents),
+      timeoutSec: typeof ad.timeoutSec === 'number' && ad.timeoutSec >= 10 ? Math.floor(ad.timeoutSec) : (prev.agentDefaults?.timeoutSec ?? DEFAULT_AGENT_LIMITS.timeoutSec),
     };
     const next: SharedSettings & { agentDefaults: typeof agentDefaults } = {
       agentDefaults,

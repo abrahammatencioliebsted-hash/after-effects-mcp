@@ -609,9 +609,22 @@ export class PaperclipBackend implements McBackend {
     const timeoutMin = assignee ? Math.round(num(asRecord(assignee.raw.adapterConfig).timeoutSec, 1800) / 60) : 30;
     const docs = this.docsFromComments(issue, comments, agents);
     const noteDocs = this.noteDocs(issue.id, issue.identifier);
-    const agentComments = comments.filter((c) => c.authorType === 'agent').sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+    const runStatus = new Map(runs.map((r) => [r.id, r.status]));
+    const failedRun = (c: object): boolean => {
+      const rid = (c as { createdByRunId?: unknown }).createdByRunId;
+      const st = typeof rid === 'string' ? runStatus.get(rid) : undefined;
+      return st === 'failed' || st === 'timed_out';
+    };
+    // Solo un comentario de un run exitoso cuenta como resultado; el de un run fallido queda como mensaje de la línea de tiempo.
+    const agentComments = comments.filter((c) => c.authorType === 'agent' && !failedRun(c)).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
     const last = agentComments[agentComments.length - 1];
     const showResult = (base.status === 'review' || base.status === 'delivered' || base.status === 'blocked') && last;
+    for (const e of timeline) {
+      if (e.kind === 'message' && e.actorType === 'agent' && e.runId && (runStatus.get(e.runId) === 'failed' || runStatus.get(e.runId) === 'timed_out')) {
+        e.summary = `[run fallido] ${e.summary}`;
+        e.body = `Nota: run fallido; el texto del agente es parcial y no se presenta como resultado.\n\n${e.body ?? ''}`;
+      }
+    }
     const children = issues.filter((k) => k.parentId === issue.id).map((k) => this.summarize(k, { agents, runsByIssue: new Map(), issues }));
     const unknownModel = runs.every((r) => !r.modelLabel);
     const provenance: ProvenanceNote[] = [
@@ -805,10 +818,21 @@ export class PaperclipBackend implements McBackend {
   async rerunMission(id: string, note?: string): Promise<MissionDetail> {
     const issue = await this.guard(id, 'rerun');
     if (!issue.assigneeAgentId) throw conflict('La misión no tiene agente asignado');
+    // Candado de 60 s por misión: dos clics seguidos no crean dos runs.
+    const lockKey = `rerun-lock:${issue.id}`;
+    const lock = this.deps.db.prepare('SELECT value_json FROM settings WHERE key = ?').get(lockKey) as { value_json: string } | undefined;
+    if (lock && Date.now() - Number(lock.value_json) < 60_000) throw conflict('Ya se pidió un reintento de esta misión hace menos de 60 s', { code: 'rerun_locked' });
+    this.deps.db.prepare('INSERT INTO settings(key, value_json) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json').run(lockKey, String(Date.now()));
+    const retryNo = (this.meta(issue.id)?.retry_count ?? 0) + 1;
     if (issue.status !== 'in_progress') await this.c.updateIssue(issue.id, { status: 'in_progress', ...(issue.status === 'done' || issue.status === 'cancelled' ? { reopen: true } : {}) });
     if (note?.trim()) await this.c.addIssueComment(issue.id, { body: `[Operador humano] Reintento solicitado: ${note.trim()}`, authorType: 'user' });
-    await this.c.invokeHeartbeat(issue.assigneeAgentId, { source: 'on_demand', triggerDetail: 'manual', reason: 'mc_rerun', payload: { issueId: issue.id }, issueId: issue.id });
     const m = this.meta(issue.id);
+    try {
+      await this.wakeForRerun(issue, retryNo);
+    } catch (err) {
+      this.deps.db.prepare('DELETE FROM settings WHERE key = ?').run(lockKey); // el reintento no se hizo: se libera el candado
+      throw err;
+    }
     if (m) this.deps.db.prepare('UPDATE missions_meta SET retry_count = retry_count + 1 WHERE issue_id = ?').run(issue.id);
     else {
       this.deps.db
@@ -817,6 +841,32 @@ export class PaperclipBackend implements McBackend {
     }
     this.invalidate();
     return this.detail(await this.issueOf(issue.id));
+  }
+
+  /**
+   * Despierta al asignado con `POST /agents/{id}/wakeup` (admite idempotencyKey y liga el run a la issue).
+   * Si el build de Paperclip no tiene la ruta (404/405), cae a `heartbeat/invoke`, que no deduplica: ahí protege el candado de 60 s.
+   */
+  private async wakeForRerun(issue: PaperclipIssue, retryNo: number): Promise<void> {
+    const agentId = issue.assigneeAgentId!;
+    const body = {
+      source: 'on_demand',
+      triggerDetail: 'manual',
+      reason: 'mc_rerun',
+      payload: { issueId: issue.id, taskId: issue.id },
+      issueId: issue.id,
+      idempotencyKey: `mc:rerun:${issue.id}:${retryNo}`,
+      forceFreshSession: false,
+    };
+    try {
+      await this.c.request('POST', `/agents/${agentId}/wakeup`, { body });
+    } catch (err) {
+      if (err instanceof PaperclipError && (err.status === 404 || err.status === 405)) {
+        await this.c.invokeHeartbeat(agentId, { source: 'on_demand', triggerDetail: 'manual', reason: 'mc_rerun', payload: { issueId: issue.id }, issueId: issue.id, idempotencyKey: body.idempotencyKey });
+        return;
+      }
+      throw err;
+    }
   }
 
   async stopMission(id: string, note?: string): Promise<MissionDetail> {
@@ -897,7 +947,7 @@ export class PaperclipBackend implements McBackend {
         apiBaseUrl: baseUrl,
         apiKey: { type: 'secret_ref', secretId, version: 'latest' },
         sessionKeyStrategy: 'issue',
-        timeoutSec: 600,
+        timeoutSec: s.agentDefaults.timeoutSec,
         eventReconnectMs: 2000,
         instructions: `${req.instructions?.trim() ?? ''}${mimoNote}`.trim() || undefined,
       };
