@@ -115,3 +115,21 @@ Informe literal: docs/evidencias/restauracion-lab.md. Scripts: scripts/common/{b
 - `@mc/ui`: typecheck, build y 32/32 pruebas; 22 capturas con datos simulados (`?mock=1`) en apps/ui/docs-assets/.
 - BFF arrancado en modo paperclip (puerto 3300) sirviendo la UI compilada: `GET /api/mc/health` → paperclip reachable v2026.1005.0, catálogo 23 capacidades; `overview` → 24 misiones, 86,3 % de éxito, 20 agentes, 108 703 tokens de entrada; `ideas` → N01, N02, N05 "sin-decision".
 - Capturas con datos reales (Chromium headless): apps/ui/docs-assets/real-{cockpit,misiones,agentes,salud,ideas}.png. Cockpit muestra 25 misiones, 85 % de éxito, equipos "Sin datos" (sin node-agent conectado). Sin errores de página registrados en las vistas capturadas.
+
+## 2026-10-08 09:2x UTC — Batería completa del workspace (`pnpm -r test`, sin variables de entorno de laboratorio)
+| Paquete | Pruebas | Pasan | Fallan | Omitidas |
+| --- | --- | --- | --- | --- |
+| apps/bff | 39 | 39 | 0 | 0 |
+| apps/node-agent | 20 | 20 | 0 | 0 |
+| apps/ui | 32 | 32 | 0 | 0 |
+| packages/catalog | 16 | 16 | 0 | 0 |
+| packages/hermes-mock | 26 | 26 | 0 | 0 |
+| packages/paperclip-client | 31 | 16 | 0 | 15 (en vivo, requieren PAPERCLIP_URL; pasaron 15/15 cuando se ejecutaron) |
+| tests | 9 | 9 | 0 | 0 (los 8 escenarios de laboratorio requieren MC_PAPERCLIP_URL) |
+| **Total** | **173** | **158** | **0** | **15** |
+`pnpm -r typecheck` en verde en los 8 paquetes. Además, en vivo: cliente 15/15, BFF 6/6, `lab/e2e.mjs` 16/16, 8 escenarios de fallo registrados.
+
+## 2026-10-08 09:08 UTC — Suite de fallos re-ejecutada (8/8 escenarios registrados, 599 s)
+- `pnpm --filter @mc/tests test:lab` → 8 pass / 0 fail. Escenario 7 (duplicados) corregido: dos `POST /agents/{id}/heartbeat/invoke` simultáneos crean **dos runs on_demand distintos** (dos POST al mock con Idempotency-Key distintas): Paperclip **no deduplica** invocaciones manuales ni liga el run a la issue → veredicto parcial; MC debe usar el wakeup con idempotencia o un candado propio.
+- Hallazgos adicionales: tras cualquier run failed/timed_out la tarea pasa a `blocked` (`issue.execution_recovery_settled {outcome: blocked, replay: not_authorized}`) sin reintento; el 429 no se reintenta; un run fallido puede dejar igualmente un comentario del agente con texto parcial (comentario ≠ éxito); con el ejecutor reiniciado el adaptador insiste ~2 peticiones/s hasta `timeoutSec` (con el 600 s por defecto, 10 min colgado).
+- Objetos "[auto-test fallos]" que quedaron en la instancia: agentes pausados, tareas canceladas/cerradas y un secreto por ejecución.
