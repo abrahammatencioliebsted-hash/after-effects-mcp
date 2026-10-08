@@ -19,7 +19,7 @@ El **hito 1 está cerrado en el entorno Cloud** (Linux, un solo equipo): base ve
 | Restauración completa | **Probada** entre dos instancias (8/8) | `docs/evidencias/restauracion-lab.md`, `scripts/README.md` |
 | Paquetes y apps | contracts, catalog (23 capacidades), paperclip-client (16 + 15/15 en vivo), hermes-mock (26), bff (56 + 6 en vivo), ui (44 + capturas reales), node-agent (20), tests (9); **202 pruebas, 187 pasan, 15 omitidas (en vivo), 0 fallan** | `docs/02-componentes-y-estado.md` §6 |
 | Runbooks Windows/macOS/segundo equipo/actualizar-restaurar | Redactados con citas; **no ejecutados en tus equipos** | `docs/04-runbooks/` |
-| Revisión independiente | 5 de 6 dimensiones entregadas: 32 hallazgos, 30 corregidos en esta sesión | Sección "Revisión independiente" de abajo; `06-evidencias.md` 09:4x |
+| Revisión independiente | 6 dimensiones entregadas: 36 hallazgos, 34 corregidos en esta sesión, 2 documentados como límite | Sección "Revisión independiente" de abajo; `06-evidencias.md` 09:4x |
 
 ## Qué cambió respecto al plan original
 
@@ -73,7 +73,7 @@ Para el laboratorio real (Paperclip + Hermes + modelo simulado) sigue `lab/READM
 
 ## Revisión independiente (cerrada 2026-10-08 ~09:55 UTC)
 
-Seis revisores independientes (Fable 5.1 · Alto, uno por dimensión, con acceso al código, al Paperclip vivo y a un BFF propio en puerto efímero) y una pasada de verificación adversarial por hallazgo. Cinco dimensiones entregaron informe; la de **reproducibilidad** (runbooks/scripts) no terminó antes del cierre y queda como pendiente de la siguiente sesión.
+Seis revisores independientes (Fable 5.1 · Alto, uno por dimensión, con acceso al código, al Paperclip vivo y a un BFF propio en puerto efímero) y una pasada de verificación adversarial por hallazgo. Las seis dimensiones entregaron informe: **36 hallazgos** (6 altos, 11 medios, 19 bajos), **34 corregidos** aquí con prueba y 2 documentados como límite. La verificación adversarial se **detuvo a propósito** tras 7 hallazgos (6 confirmados, 1 rebajado a bajo: BFF-01, porque hoy `hermes_gateway` es `unpriced`) para no gastar crédito en reverificar lo que ya estaba corregido; en su lugar, cada corrección tiene una prueba de regresión y las defensas se compararon contra el build anterior con las mismas peticiones (`06-evidencias.md` 09:4x: 200/200/200/200/400/500 antes → 400/400/403/403/413/409 después).
 
 | Dimensión | Hallazgos (alto/medio/bajo) | Corregidos aquí | Abiertos |
 | --- | --- | --- | --- |
@@ -82,6 +82,6 @@ Seis revisores independientes (Fable 5.1 · Alto, uno por dimensión, con acceso
 | Fiabilidad | 7 (1/3/3): aprobar/reintentar/detener escribían antes de confirmar con Paperclip; errores tragados al decidir; plan pendiente fantasma; backoff del latido; secretos de laboratorio acumulados | 6 | F7 (bajo): los secretos de prueba se acumulan; este build de Paperclip no expone `DELETE` de secretos → documentado en `tests/README.md` y `lab/e2e.mjs` acepta `HERMES_SECRET_ID` |
 | UI | 9 (2/2/5): mapa de calor con día/hora equivocados; modo degradado solo en la primera carga; sin resincronizar tras SSE; topes con texto falso; alternador de tema; pestañas sin foco; paginación; errores de asistentes; clave de idempotencia | 9 (44/44 pruebas) | Límite residual (bajo): los eventos perdidos entre la primera carga y la primera conexión SSE no se resincronizan; las pestañas con flechas no tienen prueba automática |
 | Pruebas | 7 (1/1/5): `pnpm test` fallaba en clon limpio; el informe de fallos pisaba la evidencia; evidencia desactualizada; aserción tautológica; misión en vivo sin limpiar; secreto e2e sin reutilizar; prueba del cliente atada a ids | 7 | — |
-| Reproducibilidad | sin informe al cierre | — | Repetir en la siguiente sesión (Fable 5.1 · Alto, ~0,5 M) |
+| Reproducibilidad | 4 (0/1/3): `verify-restore.mjs` no encontraba el driver en Windows nativo (`npm root -g`); `lab/e2e.mjs` con rutas con espacios; el laboratorio clonaba Hermes sin fijar el commit; frase obsoleta en dos runbooks | 4 | — |
 
 Todo lo corregido tiene prueba (`apps/bff/test/hardening.test.mjs`, pruebas nuevas de `apps/ui/test`, `node-agent.test.mjs`) y se volvió a ejecutar en vivo contra el Paperclip real (BFF 6/6, cliente 15/15) y contra un servidor real del BFF (códigos 400/403/413/415 literales en `06-evidencias.md`). Los informes completos de los revisores viven en el registro del flujo de trabajo de esta sesión (no en el repositorio); el resumen por hallazgo está en `06-evidencias.md` 09:4x.

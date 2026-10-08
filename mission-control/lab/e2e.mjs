@@ -5,6 +5,7 @@
 // HERMES_URL, HERMES_API_KEY (obligatoria), E2E_MARKER (def. MC-STUB-OK), E2E_TIMEOUT_SEC (def. 120).
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const PAPERCLIP_URL = (process.env.PAPERCLIP_URL || 'http://127.0.0.1:3100').replace(/\/$/, '');
 const HERMES_URL = (process.env.HERMES_URL || 'http://127.0.0.1:8642').replace(/\/$/, '');
@@ -26,7 +27,7 @@ async function api(method, p, body) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const runtimeDir = path.join(path.dirname(new URL(import.meta.url).pathname), '.runtime');
+const runtimeDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '.runtime'); // fileURLToPath: rutas con espacios y unidades de Windows
 fs.mkdirSync(runtimeDir, { recursive: true });
 const steps = [];
 const step = (name, ok, detail) => { steps.push({ name, ok, detail }); log(`${ok ? 'OK ' : 'FALLO'} ${name}${detail ? ' — ' + detail : ''}`); };

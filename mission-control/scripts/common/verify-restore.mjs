@@ -17,6 +17,8 @@
 // Verificado en Linux contra paperclipai@2026.1005.0 (docs/evidencias/restauracion-lab.md). NO verificado en Windows/macOS.
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { platform } from 'node:os';
 import { createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -78,9 +80,23 @@ function localizarPostgres(dbPath) {
   const cands = [];
   if (dbPath) cands.push(resolve(dbPath));
   if (process.env.MC_PAPERCLIP_DB_PATH) cands.push(resolve(process.env.MC_PAPERCLIP_DB_PATH));
+  // Misma lista que restore-db.mjs: instalación global de npm (Windows nativo: `npm i -g paperclipai`), gestionada y cachés npx.
+  try {
+    const npm = platform() === 'win32' ? 'npm.cmd' : 'npm';
+    const raiz = execFileSync(npm, ['root', '-g'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: platform() === 'win32' }).trim();
+    if (raiz) {
+      cands.push(join(raiz, 'paperclipai', 'node_modules', '@paperclipai', 'db'));
+      cands.push(join(raiz, '@paperclipai', 'db'));
+    }
+  } catch { /* npm no disponible: se ignora */ }
   cands.push(join(homedir(), '.paperclip', 'cli', 'current', 'node_modules', '@paperclipai', 'db'));
-  const npx = join(homedir(), '.npm', '_npx');
-  if (existsSync(npx)) for (const d of readdirSync(npx)) cands.push(join(npx, d, 'node_modules', '@paperclipai', 'db'));
+  cands.push(join(homedir(), '.paperclip', 'cli', 'current', 'node_modules', 'paperclipai', 'node_modules', '@paperclipai', 'db'));
+  const cachesNpx = [join(homedir(), '.npm', '_npx')];
+  if (platform() === 'win32' && process.env.LOCALAPPDATA) cachesNpx.push(join(process.env.LOCALAPPDATA, 'npm-cache', '_npx'));
+  for (const npx of cachesNpx) {
+    if (!existsSync(npx)) continue;
+    for (const d of readdirSync(npx)) cands.push(join(npx, d, 'node_modules', '@paperclipai', 'db'));
+  }
   for (const c of cands) {
     if (existsSync(join(c, 'package.json'))) {
       try { const m = createRequire(join(c, 'package.json'))('postgres'); return m.default ?? m; } catch { /* siguiente */ }

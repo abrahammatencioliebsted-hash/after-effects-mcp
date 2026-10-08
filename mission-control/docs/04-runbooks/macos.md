@@ -109,7 +109,7 @@ mkdir -p ~/.mc/node-agent && (umask 077; node -e "console.log(require('crypto').
 bash scripts/macos/install-node-agent.sh --machine-id mac --bff-url http://<IP-tailnet-del-BFF>:3300              # plan
 bash scripts/macos/install-node-agent.sh --machine-id mac --bff-url http://<IP-tailnet-del-BFF>:3300 --yes
 ```
-- El BFF de MC escucha por defecto en **3300** (no en 3100, que es Paperclip). El ejemplo del README del node-agent usa `192.168.1.10:3100`: corrígelo.
+- El BFF de MC escucha por defecto en **3300** (no en 3100, que es Paperclip); el README del node-agent ya usa `http://100.x.y.z:3300`.
 - El script escribe un lanzador `~/.mc/node-agent/run.sh` (modo 700) que **lee el token del archivo** y hace `exec node …/main.js`, y el plist `~/Library/LaunchAgents/com.mc.node-agent.plist` **sin el token**. PATH del plist: `~/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin` (para encontrar `hermes`).
 - Idempotente: hace `launchctl bootout` (si estaba cargado) y vuelve a `bootstrap` + `kickstart -k`.
 - Comprobar: `curl -s http://127.0.0.1:3400/health` → `{"ok":true,"machineId":"mac",…}` (esperado); logs en `~/Library/Logs/mc-node-agent.log` y `.err.log`. Quitar: `bash scripts/macos/install-node-agent.sh --uninstall --yes`.

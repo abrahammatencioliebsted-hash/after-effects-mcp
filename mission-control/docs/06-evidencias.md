@@ -139,9 +139,11 @@ Informe literal: docs/evidencias/restauracion-lab.md. Scripts: scripts/common/{b
 
 ## 2026-10-08 09:1x–09:5x UTC — Revisión independiente y correcciones (hito 1)
 
-**Qué se hizo.** Seis revisores independientes (Fable 5.1 · Alto; dimensiones: seguridad, corrección del BFF, fiabilidad, UI, pruebas, reproducibilidad), cada uno con el código, el Paperclip vivo (127.0.0.1:3101) y un BFF propio en puerto efímero; después, verificación adversarial por hallazgo. Las correcciones se hicieron en un árbol de trabajo aislado (git worktree) para no alterar lo que los revisores leían, y se fusionaron al cerrar. La dimensión **reproducibilidad** no entregó informe antes del cierre.
+**Qué se hizo.** Seis revisores independientes (Fable 5.1 · Alto; dimensiones: seguridad, corrección del BFF, fiabilidad, UI, pruebas, reproducibilidad), cada uno con el código, el Paperclip vivo (127.0.0.1:3101) y un BFF propio en puerto efímero; después, verificación adversarial por hallazgo. Las correcciones se hicieron en un árbol de trabajo aislado (git worktree) para no alterar lo que los revisores leían, y se fusionaron al cerrar.
 
-**Hallazgos entregados: 32** (6 altos, 10 medios, 16 bajos). Corregidos: 30. Documentados como límite: 2 (F7 secretos de prueba acumulados; UI-03 residual: eventos perdidos antes de la primera conexión SSE).
+**Hallazgos entregados: 36** (6 altos, 11 medios, 19 bajos). Corregidos: 34. Documentados como límite: 2 (F7 secretos de prueba acumulados; UI-03 residual: eventos perdidos antes de la primera conexión SSE).
+
+**Verificación adversarial (parcial, detenida a propósito a las 09:5x UTC para no gastar crédito en reverificar lo ya corregido):** 7 hallazgos verificados por un segundo agente que intentó refutarlos reproduciéndolos contra el build: SEC-1 confirmado (alto), SEC-2 confirmado (alto), SEC-3 confirmado (medio), SEC-4 confirmado (bajo), BFF-01 **rebajado a bajo** (mecanismo real; impacto nulo hoy porque `hermes_gateway` es `unpriced`), BFF-02 confirmado (medio), BFF-03 confirmado (medio). Los 29 restantes no pasaron por ese segundo agente; su realidad se apoya en la reproducción del revisor original, en la prueba de regresión añadida y, para las defensas, en la comparación con el build anterior (abajo).
 
 | Id | Sev. | Hallazgo (resumen) | Corrección | Prueba |
 | --- | --- | --- | --- | --- |
@@ -167,6 +169,12 @@ Informe literal: docs/evidencias/restauracion-lab.md. Scripts: scripts/common/{b
 | T1 | alta | `pnpm test` fallaba en clon limpio (`@mc/tests` sin dependencia del mock) | `devDependencies: @mc/hermes-mock`, `pretest` y `test` raíz = `build && test` | batería completa abajo |
 | T2 | media | El informe de fallos pisaba la evidencia versionada en ejecuciones parciales | Siempre a `lab/.runtime/`; a `docs/evidencias/` solo con 8/8 sin aserciones fallidas o `MC_FALLOS_REPORT` | — (código) |
 | T3–T7 | baja | Evidencia desactualizada; aserción tautológica; misión en vivo sin limpiar; secreto e2e; prueba del cliente atada a ids/variables | Corregidos: tabla y línea 80 de este archivo; diagnóstico en vez de `|| true`; `after()` cancela la misión (salvo `MC_LIVE_KEEP=1`); `HERMES_SECRET_ID`; `MC_PAPERCLIP_URL`/ids por entorno y umbrales relajados | en vivo abajo |
+| SCR-1 | media | `verify-restore.mjs` no buscaba el driver `postgres` en `npm root -g` (Windows nativo) ni en la caché npx de Windows; `restore.ps1 -Target native` acababa en falso negativo | Misma lista de candidatos que `restore-db.mjs` (+ `%LOCALAPPDATA%\npm-cache\_npx`) | `node --check`; no ejecutado en Windows |
+| LAB-1 | baja | `lab/e2e.mjs` derivaba `.runtime/` de `URL.pathname` (rutas con espacios o unidad de Windows) | `fileURLToPath` | `node --check` |
+| LAB-2 | baja | El laboratorio clonaba Hermes de `main` sin fijar `a28a5d03` | README fija el commit | — |
+| DOC-1 | baja | Runbooks pedían corregir un `3100` que ya no existe en el README del node-agent | Frase eliminada | — |
+
+**Comparación con el build anterior** (árbol principal sin correcciones, mismas peticiones, modo demo): latido con `baseUrl` 169.254.169.254 → **200**; `https://attacker.example` → **200**; comando con `text/plain` + `Origin` ajeno → **200** (ejecutado); `Host: evil.example` → **200**; 3 MiB → 400 (tras bufferizar y validar); borrar el agente asignado y aprobar → **500**.
 
 **Comprobación contra un servidor real del BFF** (árbol corregido, modo demo, puerto efímero, `curl`):
 

@@ -14,7 +14,8 @@ curl -s http://127.0.0.1:8700/v1/models
 ## 2. Hermes con API server (puerto 8642)
 
 ```sh
-git clone --depth 1 https://github.com/NousResearch/hermes-agent ~/hermes-agent && cd ~/hermes-agent
+git clone https://github.com/NousResearch/hermes-agent ~/hermes-agent && cd ~/hermes-agent
+git checkout a28a5d03a9fa60418db5f44f3436fa2aa029c8f2    # commit verificado el 2026-10-08 (mismo que fijan los scripts de instalación); sin fijarlo, `main` puede diferir
 uv sync --python 3.14 && uv pip install --python .venv/bin/python aiohttp
 mkdir -p ~/mc-lab/hermes-home && cp <repo>/mission-control/lab/hermes-home.template/config.yaml ~/mc-lab/hermes-home/
 KEY=$(python3 -c 'import secrets;print(secrets.token_hex(24))')

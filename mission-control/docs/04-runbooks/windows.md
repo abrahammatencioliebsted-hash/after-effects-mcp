@@ -200,7 +200,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))" | Set-C
 .\scripts\windows\install-node-agent.ps1 -MachineId win-principal -BffUrl http://127.0.0.1:3300                       # plan
 .\scripts\windows\install-node-agent.ps1 -MachineId win-principal -BffUrl http://127.0.0.1:3300 -Yes
 ```
-- El BFF de MC escucha por defecto en **3300** (`MC_PORT`, `apps/bff/src/server.ts`), no en 3100 (ese es Paperclip): el ejemplo del README del node-agent usa `http://192.168.1.10:3100`; corrígelo al puerto real del BFF. Si el BFF corre en otro equipo, usa su IP de tailnet.
+- El BFF de MC escucha por defecto en **3300** (`MC_PORT`, `apps/bff/src/server.ts`), no en 3100 (ese es Paperclip). Si el BFF corre en otro equipo, usa su IP de tailnet (`http://100.x.y.z:3300`, como en el README del node-agent).
 - Crea la tarea `MC Node Agent` (al iniciar sesión, nivel limitado, reinicio ante fallos) con un lanzador `run.ps1` que lee el token del archivo, exporta `MC_*` y relanza `node` si cae. Equivalentes: `schtasks /Query /TN "MC Node Agent" /V /FO LIST`, `schtasks /Run /TN "MC Node Agent"`, `schtasks /Delete /TN "MC Node Agent" /F` (`apps/node-agent/README.md`).
 - Si `hermes` es un `.cmd`, `execFile` no lo ejecuta: el script fija `MC_HERMES_BIN` a un `.exe` si lo encuentra.
 - Comprobar (esperado según las pruebas del paquete en Linux): `curl.exe -s http://127.0.0.1:3400/health` → `{"ok":true,"machineId":"win-principal",…}`.
