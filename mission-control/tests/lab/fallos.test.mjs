@@ -77,7 +77,7 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
     seconds: secondsBetween(r.startedAt, r.finishedAt), exitCode: r.exitCode ?? null,
     retryOfRunId: r.retryOfRunId ?? null, scheduledRetryReason: r.scheduledRetryReason ?? null,
     scheduledRetryAttempt: r.scheduledRetryAttempt ?? 0, scheduledRetryAt: r.scheduledRetryAt ?? null,
-    livenessState: r.livenessState ?? null, usage: usageOf(r),
+    livenessState: r.livenessState ?? null, contextIssueId: r.contextSnapshot?.issueId ?? null, usage: usageOf(r),
   });
   const logExcerpt = (ndjson, max = 30) => {
     const out = [];
@@ -102,6 +102,19 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
   async function observeFor(agentId, secs, label) {
     await sleep(secs * 1000);
     return { label, runs: await pc.listRuns(agentId) };
+  }
+  const cap = (arr, n = 40) => (arr.length > n ? [...arr.slice(0, n), { omitidas: arr.length - n }] : arr);
+  /** Rastro de una tarea: estado, actividad (compacta) y comentarios; sirve para ver qué hizo Paperclip tras el fallo. */
+  async function trail(issueId) {
+    const issue = await pc.getIssue(issueId);
+    const act = (await pc.activity(issueId)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    const d = (x) => { const o = {}; for (const k of ['outcome', 'replay', 'maxAttempts', 'attemptCount', 'terminalReason', 'status']) if (x?.[k] !== undefined) o[k] = x[k]; return Object.keys(o).length ? o : undefined; };
+    const comments = (await pc.comments(issueId)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+    return {
+      status: issue.status, assigneeAgentId: issue.assigneeAgentId,
+      activity: act.map((a) => ({ at: a.createdAt, action: a.action, actor: a.actorType, ...(d(a.details) ? { details: d(a.details) } : {}) })),
+      comments: comments.map((c) => ({ at: c.createdAt, authorType: c.authorType, body: String(c.body).slice(0, 200) })),
+    };
   }
   const bySource = (runs) => runs.reduce((a, r) => { a[r.invocationSource] = (a[r.invocationSource] ?? 0) + 1; return a; }, {});
 
@@ -288,7 +301,7 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       rec.veredicto = 'cubre';
       rec.significado = 'Un corte de la conexión de eventos NO pierde el resultado ni duplica el run: el adaptador reconecta solo (y además sondea el estado), por lo que MC no necesita lógica propia para cortes breves de red. No hay Last-Event-ID: la reconexión repite los eventos.';
       rec.notas.push(`Peticiones de eventos: ${JSON.stringify(summarizeRequests(gets))}`);
-      rec.raw = { run: detail, mockHistogram: win.histogram, mockRequests: win.summary, logLinesWithDisconnect: logHit };
+      rec.raw = { run: detail, mockHistogram: win.histogram, mockRequests: cap(win.summary), logLinesWithDisconnect: logHit };
       await finish(agent, issue);
     });
   });
@@ -311,13 +324,14 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       const after = await observeFor(agent.id, 45, 'tras timeout');
       const win2 = mockWindow(rec);
       const mrun = mockRunForPcRun(run.id);
-      rec.resultado = `run ${run.status}, errorCode ${run.errorCode ?? '-'}, ${secondsBetween(run.startedAt, run.finishedAt)} s en Paperclip (${wall} s desde crear la tarea); ${win.stops} POST /stop; estado final del run en el mock: ${mrun?.status}; tras 45 s más: ${after.runs.length} runs (${JSON.stringify(bySource(after.runs))}), ${win2.posts} POST /v1/runs; tokens ${run.usageJson ? `${run.usageJson.inputTokens}/${run.usageJson.outputTokens}` : 'sin usageJson'}`;
+      const tr3 = await trail(issue.id);
+      rec.resultado = `run ${run.status}, errorCode ${run.errorCode ?? '-'}, ${secondsBetween(run.startedAt, run.finishedAt)} s en Paperclip (${wall} s desde crear la tarea); ${win.stops} POST /stop; estado final del run en el mock: ${mrun?.status}; tras 45 s más: ${after.runs.length} runs (${JSON.stringify(bySource(after.runs))}), ${win2.posts} POST /v1/runs; tokens ${run.usageJson ? `${run.usageJson.inputTokens}/${run.usageJson.outputTokens}` : 'sin usageJson'}; issue ${tr3.status}`;
       const exact = run.status === 'timed_out';
       rec.veredicto = exact ? 'cubre' : 'parcial';
       rec.significado = exact
         ? 'Un ejecutor colgado no deja el run abierto indefinidamente: a los timeoutSec Paperclip pide stop al ejecutor y cierra el run como timed_out (el build vivo guarda errorCode `timeout`; el código `hermes_gateway_timeout` del adaptador no llega al campo errorCode del run). MC debe fijar un timeoutSec realista por tipo de tarea; no existe otro corte por silencio (umbral del build vivo: 60 min).'
         : `Comportamiento distinto al esperado (status ${run.status}, errorCode ${run.errorCode}); revisar.`;
-      rec.raw = { run: detail, afterTimeoutRuns: after.runs.map(runInfo), mockRunState: mrun ? { status: mrun.status, lastEvent: mrun.lastEvent, events: mrun.events.length } : null, mockHistogram: win2.histogram, mockRequests: win2.summary };
+      rec.raw = { run: detail, afterTimeoutRuns: after.runs.map(runInfo), issueTrail: tr3, resultJson: run.resultJson ?? null, mockRunState: mrun ? { status: mrun.status, lastEvent: mrun.lastEvent, events: mrun.events.length } : null, mockHistogram: win2.histogram, mockRequests: cap(win2.summary) };
       await finish(agent, issue);
     });
   });
@@ -332,19 +346,20 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       const issue = await newIssue(4, agent.id);
       const first = await pc.waitFor(agent.id, (rs) => rs.find((r) => r.invocationSource === 'assignment' && pc.isTerminal(r)), { timeoutMs: 90_000, label: 'primer run terminal' });
       const seen = await observeFor(agent.id, 90, 'ventana 90 s');
-      const issueNow = await pc.getIssue(issue.id);
+      const tr4 = await trail(issue.id);
+      const issueNow = { status: tr4.status, assigneeAgentId: tr4.assigneeAgentId };
       const win = mockWindow(rec);
       const detail = await detailRun(first);
       assert.equal(first.status, 'failed');
       assert.equal(issueNow.assigneeAgentId, agent.id, 'la tarea sigue asignada al mismo agente');
       const retries = seen.runs.filter((r) => r.id !== first.id);
-      rec.resultado = `primer run ${first.status}, errorCode ${first.errorCode ?? '-'}; en 90 s: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))} (${retries.map((r) => `${r.invocationSource}/${r.status}/${r.scheduledRetryReason ?? '-'}`).join(', ') || 'sin reintentos'}); ${win.posts} POST /v1/runs; issue ${issueNow.status}, asignada=${issueNow.assigneeAgentId === agent.id}`;
+      rec.resultado = `primer run ${first.status}, errorCode ${first.errorCode ?? '-'}; en 90 s: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))} (${retries.map((r) => `${r.invocationSource}/${r.status}/${r.scheduledRetryReason ?? '-'}`).join(', ') || 'sin reintentos'}); ${win.posts} POST /v1/runs; issue ${issueNow.status} (${tr4.activity.filter((a) => a.action === 'issue.execution_recovery_settled').map((a) => `${a.action} ${JSON.stringify(a.details)} +${secondsBetween(first.finishedAt, a.at)} s`).join('; ') || 'sin acción de recuperación'}), asignada=${issueNow.assigneeAgentId === agent.id}; comentarios del agente pese al fallo: ${tr4.comments.filter((c) => c.authorType === 'agent').length}`;
       const noAuto = retries.length === 0;
       rec.veredicto = 'cubre';
       rec.significado = noAuto
-        ? 'Un fallo del ejecutor queda visible (failed + errorCode) y NO provoca reintento automático ni tormenta: la tarea sigue con su dueño. MC debe vigilar runs failed y decidir (reintentar, reasignar o escalar al humano).'
+        ? 'Un fallo del ejecutor queda visible (failed + hermes_gateway_run_failed) y NO provoca reintento automático ni tormenta: Paperclip deja la tarea con su dueño pero en blocked (acción de recuperación a cargo del board, a los pocos segundos). Ojo: el texto parcial que el ejecutor llegó a emitir se publica igualmente como comentario del agente aunque el run falló. MC debe vigilar runs failed/blocked y decidir (reintentar, reasignar o escalar al humano), y no tomar un comentario del agente como prueba de éxito.'
         : `Paperclip generó ${retries.length} run(s) adicionales tras el fallo (${retries.map((r) => r.scheduledRetryReason ?? r.invocationSource).join(', ')}): hay reintentos/recuperación automáticos acotados; MC debe contarlos y respetar su propio tope.`;
-      rec.raw = { firstRun: detail, runsIn90s: seen.runs.map(runInfo), issueStatusAfter: issueNow.status, mockRunError: mockRunForPcRun(first.id)?.error, mockHistogram: win.histogram, mockRequests: win.summary };
+      rec.raw = { firstRun: detail, runsIn90s: seen.runs.map(runInfo), issueTrail: tr4, mockRunError: mockRunForPcRun(first.id)?.error, mockHistogram: win.histogram, mockRequests: cap(win.summary) };
       await finish(agent, issue);
     });
   });
@@ -365,12 +380,13 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       assert.match(first.errorCode ?? '', /auth/);
       const retries = seen.runs.filter((r) => r.id !== first.id);
       const first401 = win.reqs.filter((r) => r.status === 401).length;
-      rec.resultado = `primer run ${first.status}, errorCode ${first.errorCode}; error: "${String(first.error).slice(0, 110)}"; en 60 s: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))}; ${win.posts} POST /v1/runs (${first401} con 401); issue ${(await pc.getIssue(issue.id)).status}`;
+      const tr5 = await trail(issue.id);
+      rec.resultado = `primer run ${first.status}, errorCode ${first.errorCode}; error: "${String(first.error).slice(0, 110)}"; en 60 s: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))}; ${win.posts} POST /v1/runs (${first401} con 401); issue ${tr5.status} (${tr5.activity.filter((a) => a.action === 'issue.execution_recovery_settled').map((a) => `${a.action} ${JSON.stringify(a.details)} +${secondsBetween(first.finishedAt, a.at)} s`).join('; ') || 'sin acción de recuperación'})`;
       rec.veredicto = retries.length === 0 ? 'cubre' : 'parcial';
       rec.significado = retries.length === 0
-        ? 'Una clave rechazada se reporta con un código específico (hermes_gateway_auth_failed) y no se reintenta: no hay tormenta de reintentos. MC puede distinguir "clave mala" de "ejecutor caído" por el errorCode y avisar al operador para rotar la clave.'
+        ? 'Una clave rechazada se reporta con un código específico (hermes_gateway_auth_failed) y no se reintenta: no hay tormenta de reintentos, y la tarea pasa a blocked para el board. MC puede distinguir "clave mala" de "ejecutor caído" por el errorCode y avisar al operador para rotar la clave.'
         : `Tras el 401 hubo ${retries.length} run(s) adicionales (${retries.map((r) => r.invocationSource).join(', ')}); en el mock la falla era de una sola vez, así que estos runs sí llegaron. MC debe tratar el errorCode de auth como no reintentable.`;
-      rec.raw = { firstRun: detail, runsIn60s: seen.runs.map(runInfo), mockHistogram: win.histogram, mockRequests: win.summary };
+      rec.raw = { firstRun: detail, runsIn60s: seen.runs.map(runInfo), issueTrail: tr5, mockHistogram: win.histogram, mockRequests: cap(win.summary) };
       await finish(agent, issue);
     });
   });
@@ -391,13 +407,14 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       const others = seen.runs.filter((r) => r.id !== first.id);
       const retryRuns = seen.runs.filter((r) => r.scheduledRetryReason || r.retryOfRunId);
       const okAfter = seen.runs.some((r) => r.status === 'succeeded');
-      const issueNow = await pc.getIssue(issue.id);
-      rec.resultado = `primer run ${first.status}, errorCode ${first.errorCode ?? '-'} (${first.error ? String(first.error).slice(0, 90) : 'sin error'}); en 90 s: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))}, reintentos programados: ${retryRuns.length} (${retryRuns.map((r) => `${r.scheduledRetryReason ?? '-'}#${r.scheduledRetryAttempt}→${r.status}`).join(', ') || 'ninguno'}); ${win.posts} POST /v1/runs (${win.reqs.filter((r) => r.status === 429).length} con 429); algún run succeeded: ${okAfter}; issue ${issueNow.status}`;
+      const tr6 = await trail(issue.id);
+      const issueNow = { status: tr6.status };
+      rec.resultado = `primer run ${first.status}, errorCode ${first.errorCode ?? '-'} (${first.error ? String(first.error).slice(0, 90) : 'sin error'}); en 90 s: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))}, reintentos programados: ${retryRuns.length} (${retryRuns.map((r) => `${r.scheduledRetryReason ?? '-'}#${r.scheduledRetryAttempt}→${r.status}`).join(', ') || 'ninguno'}); ${win.posts} POST /v1/runs (${win.reqs.filter((r) => r.status === 429).length} con 429); algún run succeeded: ${okAfter}; issue ${issueNow.status} (${tr6.activity.filter((a) => a.action === 'issue.execution_recovery_settled').map((a) => `${a.action} ${JSON.stringify(a.details)} +${secondsBetween(first.finishedAt, a.at)} s`).join('; ') || 'sin acción de recuperación'})`;
       rec.veredicto = retryRuns.length > 0 || okAfter ? 'cubre' : 'parcial';
       rec.significado = retryRuns.length > 0
         ? 'El 429 se trata como fallo transitorio: Paperclip reprograma un reintento acotado (no inmediato) del mismo trabajo; con el mock el reintento sí avanza. MC no necesita bucle propio para el 429 pero sí un tope de intentos propio por tarea.'
-        : 'El 429 deja el run failed sin reintento visible en la ventana: MC debe re-despachar o encolar por su cuenta y respetar Retry-After.';
-      rec.raw = { firstRun: detail, runsIn90s: seen.runs.map(runInfo), otherRuns: others.length, issueStatusAfter: issueNow.status, mockHistogram: win.histogram, mockRequests: win.summary };
+        : 'El 429 se trata como cualquier otro fallo: el run queda failed (hermes_gateway_rate_limited) SIN reintento automático en el build vivo (aunque el adaptador lo marca transient_upstream) y la tarea pasa a blocked para el board. Un tope de concurrencia del ejecutor, que es transitorio, exige que MC encole/re-despache por su cuenta y respete Retry-After.';
+      rec.raw = { firstRun: detail, runsIn90s: seen.runs.map(runInfo), otherRuns: others.length, issueTrail: tr6, mockHistogram: win.histogram, mockRequests: cap(win.summary) };
       await finish(agent, issue);
     });
   });
@@ -436,17 +453,31 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       raw.sinAsignar = { invokeResponses: [{ id: b1.id, status: b1.status }, { id: b2.id, status: b2.status }], sameInvokeRunId: b1.id === b2.id, runs: runsB.map(runInfo), postsToMock: keysB.length, keys: keysB };
       await finish(agentB, issueB);
 
+      // (d) mismo experimento pero con idempotencyKey en el cuerpo de la invocación (el endpoint la admite)
+      const agentD = await newAgent('7d', { timeoutSec: 60 });
+      const issueD = await newIssue('7d', null);
+      const idemD = `autotest-fallos-${Date.now().toString(36)}`;
+      const baseD = allRequests().length;
+      const [d1, d2] = await Promise.all([pc.invoke(agentD.id, { issueId: issueD.id, idempotencyKey: idemD }), pc.invoke(agentD.id, { issueId: issueD.id, idempotencyKey: idemD })]);
+      await sleep(15_000);
+      const runsD = await pc.listRuns(agentD.id);
+      const keysD = postRuns(allRequests().slice(baseD)).map((r) => r.headers['idempotency-key']);
+      raw.conIdempotencyKeyEnInvoke = { idempotencyKey: idemD, invokeResponses: [{ id: d1.id, status: d1.status }, { id: d2.id, status: d2.status }], sameInvokeRunId: d1.id === d2.id, runs: runsD.map(runInfo), postsToMock: keysD.length, keys: keysD };
+      await finish(agentD, issueD);
+
       // (c) mock con mal comportamiento: sondeo directo y luego el mismo experimento a través de Paperclip
       const h = (k) => ({ Authorization: `Bearer ${mockKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': k, 'X-Hermes-Session-Key': 'probe-7' });
       const post = async (k) => (await fetch(`${mock.url}/v1/runs`, { method: 'POST', headers: h(k), body: JSON.stringify({ input: 'sonda de duplicados' }) })).json();
-      const okA = await post(`${OBJECT_PREFIX} sonda-ok`); const okB = await post(`${OBJECT_PREFIX} sonda-ok`);
+      const okA = await post('autotest-fallos-sonda-ok'); const okB = await post('autotest-fallos-sonda-ok');
       mock.setFaults({ duplicateReplayAsNew: true });
-      const badA = await post(`${OBJECT_PREFIX} sonda-mal`); const badB = await post(`${OBJECT_PREFIX} sonda-mal`);
+      const badA = await post('autotest-fallos-sonda-mal'); const badB = await post('autotest-fallos-sonda-mal');
       raw.sondaDirectaMock = {
         conIdempotencia: { primera: okA.run_id, segunda: okB.run_id, replayed: okB.replayed, mismoRun: okA.run_id === okB.run_id },
         duplicateReplayAsNew: { primera: badA.run_id, segunda: badB.run_id, replayed: badB.replayed, mismoRun: badA.run_id === badB.run_id },
       };
+      assert.ok(okA.run_id && okB.run_id, `la sonda llegó al mock: ${JSON.stringify([okA, okB])}`);
       assert.equal(okA.run_id, okB.run_id);
+      assert.ok(badA.run_id && badB.run_id);
       assert.notEqual(badA.run_id, badB.run_id, 'con duplicateReplayAsNew el mock crea un run nuevo por petición');
       const baseC = allRequests().length;
       const agentC = await newAgent('7c', { timeoutSec: 60 });
@@ -460,11 +491,11 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       raw.conDuplicateReplayAsNew = { invokeResponses: [{ id: c1.id, status: c1.status }, { id: c2.id, status: c2.status }], runs: runsC.map(runInfo), postsToMock: keysC.length, keysDistintas: new Set(keysC).size, mockRunsCreados: allMockRuns().filter((r) => keysC.includes(r.idempotencyKey)).length };
       await finish(agentC, issueC);
 
-      const onDemandA = runsA.filter((r) => r.invocationSource === 'on_demand').length;
-      const onDemandB = runsB.filter((r) => r.invocationSource === 'on_demand').length;
-      rec.resultado = `(a) asignada: invoke×2 → ids ${r1.id === r2.id ? 'IGUALES (coalescido)' : 'distintos'}, ${runsA.length} runs ${JSON.stringify(bySource(runsA))}, ${winA.posts} POST al mock, claves únicas=${new Set(keysA).size === keysA.length}; (b) sin asignar: invoke×2 → ids ${b1.id === b2.id ? 'IGUALES' : 'distintos'}, ${runsB.length} runs ${JSON.stringify(bySource(runsB))}, ${keysB.length} POST; (c) mock duplicateReplayAsNew: sonda directa → 2 runs distintos con la misma clave (${raw.sondaDirectaMock.duplicateReplayAsNew.mismoRun ? 'mismo' : 'distintos'}); vía Paperclip: ${runsC.length} runs, ${keysC.length} POST, ${raw.conDuplicateReplayAsNew.keysDistintas} claves distintas`;
+      const onDemand = (rs) => rs.filter((r) => r.invocationSource === 'on_demand').length;
+      const coalA = r1.id === r2.id; const coalB = b1.id === b2.id; const coalD = d1.id === d2.id;
+      rec.resultado = `(a) tarea asignada con run en vuelo + invoke×2: ${coalA ? 'ids IGUALES (coalescido)' : 'ids distintos'}, ${runsA.length} runs ${JSON.stringify(bySource(runsA))}, ${winA.posts} POST al mock, claves únicas=${new Set(keysA).size === keysA.length}; (b) tarea sin asignar + invoke×2: ${coalB ? 'ids IGUALES' : 'ids distintos'}, ${onDemand(runsB)} runs on_demand, ${keysB.length} POST; (d) invoke×2 con idempotencyKey: ${coalD ? 'ids IGUALES (un solo run)' : 'ids distintos'}, ${onDemand(runsD)} run(s) on_demand, ${keysD.length} POST; issueId en el contexto del run on_demand: ${runsB.find((r) => r.invocationSource === 'on_demand')?.contextSnapshot?.issueId ? 'sí' : 'NO (el endpoint lo ignora)'}; (c) mock duplicateReplayAsNew: sonda directa con la MISMA clave → run_id ${raw.sondaDirectaMock.duplicateReplayAsNew.mismoRun ? 'iguales' : 'DISTINTOS (duplica)'} vs. sin fallo → ${raw.sondaDirectaMock.conIdempotencia.mismoRun ? 'mismo run_id (replayed)' : 'distinto'}; vía Paperclip con ese fallo: ${runsC.length} runs, ${keysC.length} POST, ${raw.conDuplicateReplayAsNew.keysDistintas} claves distintas`;
       rec.veredicto = 'parcial';
-      rec.significado = `Paperclip genera una Idempotency-Key nueva por run (nunca repite POST con la misma clave), así que la idempotencia del ejecutor solo protege contra reintentos de red del mismo run, no contra dobles invocaciones: la deduplicación de despertares ocurre en Paperclip (coalescencia por agente/tarea: ${onDemandA + onDemandB} runs on_demand de 4 invocaciones). Un ejecutor mal portado (duplicateReplayAsNew) no cambia nada vía Paperclip porque la clave nunca se repite. MC debe deduplicar misiones por su cuenta (idempotencyKey en la creación de tareas).`;
+      rec.significado = `Dos invocaciones simultáneas SIN idempotencyKey ${coalB ? 'se coalescen' : `NO se coalescen: Paperclip crea ${onDemand(runsB)} runs on_demand, cada uno con su propia Idempotency-Key (= su id de run) y su POST al ejecutor, es decir trabajo duplicado`}; ${coalD ? 'con idempotencyKey en el cuerpo de la invocación sí se reduce a un solo run' : 'ni siquiera con idempotencyKey en el cuerpo se reduce a un solo run'}. Además el endpoint legacy ignora issueId. Como Paperclip nunca repite un POST con la misma clave, la idempotencia del ejecutor solo cubre reintentos de red del mismo run y un ejecutor mal portado (duplicateReplayAsNew) no cambia nada vía Paperclip. MC debe deduplicar por su cuenta (idempotencyKey al crear la tarea y al despertar al agente).`;
       rec.raw = raw;
     });
   });
@@ -493,16 +524,16 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       const tTerminal = Math.round((Date.now() - t0) / 100) / 10;
       const detail = await detailRun(run);
       const seen = await observeFor(agent.id, 75, 'continuación');
-      const issueNow = await pc.getIssue(issue.id);
+      const tr8 = await trail(issue.id);
+      const issueNow = { status: tr8.status };
       const win = mockWindow(rec);
-      const act = (await pc.activity(issue.id)).map((a) => ({ at: a.createdAt, action: a.action, actor: a.actorType, details: a.action.includes('disposition') || a.action.includes('recovery') || a.action.includes('stranded') ? a.details : undefined }));
       assert.notEqual(run.status, 'succeeded', 'el run no puede haber tenido éxito: el ejecutor perdió su estado');
       const extra = seen.runs.filter((r) => r.id !== run.id);
       const post2 = win.reqs.filter((r) => r.method === 'POST' && r.path === '/v1/runs');
-      rec.resultado = `mock cerrado ${tClose} (run ${stateBefore.status}, ${stateBefore.events} eventos) y reiniciado ${tRestart}; run de Paperclip ${run.status}, errorCode ${run.errorCode ?? '-'} a los ${tTerminal} s; error "${String(run.error).slice(0, 100)}"; en 75 s más: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))} (${extra.map((r) => `${r.invocationSource}/${r.status}/${r.errorCode ?? r.scheduledRetryReason ?? '-'}`).join(', ') || 'sin runs adicionales'}); ${post2.length} POST /v1/runs en total; issue ${issueNow.status}`;
+      rec.resultado = `mock cerrado ${tClose} (run ${stateBefore.status}, ${stateBefore.events} eventos) y reiniciado ${tRestart}; run de Paperclip ${run.status}, errorCode ${run.errorCode ?? '-'} a los ${tTerminal} s; error "${String(run.error).slice(0, 100)}"; en 75 s más: ${seen.runs.length} runs ${JSON.stringify(bySource(seen.runs))} (${extra.map((r) => `${r.invocationSource}/${r.status}/${r.errorCode ?? r.scheduledRetryReason ?? '-'}`).join(', ') || 'sin runs adicionales'}); ${post2.length} POST /v1/runs en total; ${win.reqs.filter((r) => r.status === 404).length} respuestas 404 del mock (sondeo/eventos del run desconocido) antes del timeout; issue ${issueNow.status} (${tr8.activity.filter((a) => a.action === 'issue.execution_recovery_settled').map((a) => `${a.action} ${JSON.stringify(a.details)} +${secondsBetween(run.finishedAt, a.at)} s`).join('; ') || 'sin acción de recuperación'})`;
       rec.veredicto = 'parcial';
-      rec.significado = 'Apagar o reiniciar el ejecutor a mitad de tarea NO se recupera por sí solo en el mismo run: el trabajo remoto se pierde (el run cambia de dueño/estado en el mock) y Paperclip lo cierra con el estado/código anotado. Lo que ocurre después depende de la recuperación de Paperclip (ver runs adicionales); MC debe detectar el run fallido, avisar y decidir si re-despacha con una clave nueva (puede duplicar trabajo si el ejecutor original seguía vivo).';
-      rec.raw = { mockBeforeClose: stateBefore, closeAtUtc: tClose, restartAtUtc: tRestart, terminalRun: detail, runsAfter75s: seen.runs.map(runInfo), issueStatusAfter: issueNow.status, activity: act, mockHistogram: win.histogram, mockRequests: win.summary };
+      rec.significado = 'Apagar o reiniciar el ejecutor a mitad de tarea NO se recupera: el adaptador no distingue "ejecutor reiniciado" de "red caída" (ECONNREFUSED y luego 404 del run desconocido se tratan como errores transitorios, con unas 2 peticiones/s) y no abandona hasta agotar timeoutSec; entonces el run queda timed_out y la tarea pasa a blocked para el board, sin re-despacho automático. Con el timeoutSec por defecto (600 s) una tarea quedaría 10 min colgada. MC debe fijar timeoutSec acorde a la tarea y vigilar blocked/timed_out; el re-despacho (con otra Idempotency-Key) puede duplicar trabajo si el ejecutor original sigue vivo.';
+      rec.raw = { mockBeforeClose: stateBefore, closeAtUtc: tClose, restartAtUtc: tRestart, terminalRun: detail, runsAfter75s: seen.runs.map(runInfo), issueStatusAfter: issueNow.status, issueTrail: tr8, mockHistogram: win.histogram, mockRequests: cap(win.summary) };
       await finish(agent, issue);
     });
   });

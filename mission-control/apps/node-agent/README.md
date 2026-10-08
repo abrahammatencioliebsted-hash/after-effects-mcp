@@ -51,7 +51,7 @@ Las variables de entorno deben existir para la tarea; lo más simple es definirl
 
 ```bat
 setx MC_MACHINE_ID "win-principal"
-setx MC_BFF_URL "http://192.168.1.10:3100"
+setx MC_BFF_URL "http://100.x.y.z:3300"
 setx MC_NODE_AGENT_TOKEN "<TOKEN>"
 
 schtasks /Create /SC ONLOGON /TN "MC Node Agent" /TR "\"C:\Program Files\nodejs\node.exe\" C:\mc\apps\node-agent\dist\main.js"
@@ -67,7 +67,7 @@ Nota: `ONLOGON` arranca al iniciar sesión el usuario, no como servicio de siste
 ```bat
 nssm install MCNodeAgent "C:\Program Files\nodejs\node.exe" "C:\mc\apps\node-agent\dist\main.js"
 nssm set MCNodeAgent AppDirectory C:\mc\apps\node-agent
-nssm set MCNodeAgent AppEnvironmentExtra MC_MACHINE_ID=win-principal MC_BFF_URL=http://192.168.1.10:3100 MC_NODE_AGENT_TOKEN=<TOKEN>
+nssm set MCNodeAgent AppEnvironmentExtra MC_MACHINE_ID=win-principal MC_BFF_URL=http://100.x.y.z:3300 MC_NODE_AGENT_TOKEN=<TOKEN>
 nssm set MCNodeAgent AppStdout C:\mc\logs\node-agent.log
 nssm set MCNodeAgent AppStderr C:\mc\logs\node-agent.err.log
 nssm start MCNodeAgent
@@ -93,7 +93,7 @@ Archivo `~/Library/LaunchAgents/com.mc.node-agent.plist`:
   <key>EnvironmentVariables</key>
   <dict>
     <key>MC_MACHINE_ID</key><string>mac</string>
-    <key>MC_BFF_URL</key><string>http://192.168.1.10:3100</string>
+    <key>MC_BFF_URL</key><string>http://100.x.y.z:3300</string>
     <key>MC_NODE_AGENT_TOKEN</key><string>&lt;TOKEN&gt;</string>
     <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>

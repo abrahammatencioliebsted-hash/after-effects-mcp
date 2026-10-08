@@ -19,7 +19,7 @@ Prueba de la restauración con salida literal: `docs/evidencias/restauracion-lab
 | Script | Linux/WSL2 | macOS | Windows nativo | Verificado aquí |
 |---|:-:|:-:|:-:|---|
 | `common/restore-db.mjs` | sí | sí | sí | **SÍ, ejecutado de verdad** contra un Paperclip real (motor JS, sin psql): restauró 2515 sentencias en 8,4 s y la verificación pasó 8/8. No ejecutado en Win/Mac. |
-| `common/verify-restore.mjs` | sí | sí | sí | **SÍ, ejecutado de verdad** (8/8 comprobaciones, incluida la descifrado de secretos con `master.key` y el control negativo). |
+| `common/verify-restore.mjs` | sí | sí | sí | **SÍ, ejecutado de verdad** (8/8 comprobaciones, incluido el descifrado de secretos con `master.key` y el control negativo). |
 | `common/backup-full.mjs` | sí | sí | sí (usa `tar.exe` de Windows 10 1803+) | **SÍ, ejecutado de verdad** sobre la instancia viva y sobre la restaurada (detectó el cambio de puerto 54329→54330). Rama de Windows (`powershell Get-CimInstance`, `tar.exe`) **no** ejecutada. |
 | `common/restore-files.mjs` | sí | sí | sí | **SÍ, ejecutado** (plan, negativa sin `--yes`, aplicar) sobre un directorio de prueba; el restaurador de claves de la prueba principal se hizo con `cp`. Permisos `0600` no aplican en Windows. |
 | `common/restore-managed.sh` | sí | sí | — | Solo `bash -n` y modo plan. La detección del puerto de PG se probó contra el proceso vivo. **No** contra un servicio launchd/systemd real. |

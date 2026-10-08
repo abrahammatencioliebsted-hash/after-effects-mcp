@@ -122,5 +122,7 @@ Siguientes pasos y avisos (docs/04-runbooks/windows.md):
   * Paperclip en WSL2 escucha en el loopback de WSL2. Un Hermes NATIVO en Windows queda en 127.0.0.1 de Windows: para Paperclip eso es
     "HTTP remoto" (denegado por defecto). Opciones: (a) Hermes del principal DENTRO de WSL2 (loopback); (b) HTTPS delante de Hermes;
     (c) networkingMode=mirrored en %USERPROFILE%\.wslconfig (Windows 11 22H2+) y wsl --shutdown, y comprobarlo (no verificado aquí).
+  * Con -Bind tailnet fija ademas PAPERCLIP_TAILNET_BIND_HOST=<IP 100.x> en ~/.paperclip/instances/default/.env: systemd se rinde tras 5 fallos en 60 s
+    si Tailscale no esta arriba al arrancar (recuperar: systemctl --user reset-failed paperclipai.service && systemctl --user start paperclipai.service).
   * WSL2 se apaga si no hay procesos: el servicio systemd de usuario + linger lo mantiene, pero comprueba que sobrevive a 'wsl --shutdown' + reinicio.
 '@

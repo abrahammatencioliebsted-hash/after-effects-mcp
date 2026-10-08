@@ -371,12 +371,13 @@ export function seedSettings(): SharedSettings {
     ownerName: 'Abraham',
     bossAgentId: 'ag-executor',
     modelPrices: [
-      { modelLabel: 'mimo-v2.5-pro', inputPerMTok: 0.4, outputPerMTok: 1.6 },
+      { modelLabel: 'mimo-v2.5-pro', inputPerMTok: 0.4, outputPerMTok: 1.6, nota: 'Precio de ejemplo (simulado)' } as SharedSettings['modelPrices'][number],
       { modelLabel: 'claude-sonnet-5-5', inputPerMTok: 3, outputPerMTok: 15 },
       { modelLabel: 'gpt-5.5-codex', inputPerMTok: 1.25, outputPerMTok: 10 },
     ],
     healthThresholds: { cpuPercent: 85, memPercent: 85, diskPercent: 90 },
     vaultPaths: {},
+    ...({ agentDefaults: { maxDailyRuns: 40, maxDailyCostCents: 500, maxConcurrentRuns: 2 }, hermesSecretIds: { 'win-principal': 'secret-hermes-win-principal' } } as object),
   };
 }
 

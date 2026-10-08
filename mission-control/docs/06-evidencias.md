@@ -88,3 +88,30 @@ Run manual adicional 08:12:05 (`POST /api/agents/{a}/heartbeat/invoke` → queue
 - Misión de prueba MIS-17 creada por el BFF con `Idempotency-Key` (segundo POST devuelve la misma misión); issue con reviewPolicy human_only e `idempotencyKey` de Paperclip; línea de tiempo fusionada: created → assigned → run_started(assignment) → run_finished → message MC-STUB-OK → retry → … → system/escalated a los 94 s (vigilante 2/2 → blocked). Evento SSE `mission.changed` verificado.
 - Agentes creados por MC: permissions canCreateAgents/canCreateSkills=false; runtimeConfig.heartbeat {maxConcurrentRuns 1, maxDailyRuns 40, maxDailyCostCents 500}.
 - Lo que NO demuestra: adapterConfig de claude_local/codex_local/grok_local no verificado creando agentes reales; límites maxMinutes/maxSteps se guardan pero no se imponen; reenvío de comandos al node-agent solo en demo.
+
+## 2026-10-08 08:45–08:56 UTC — Fallos principales con el adaptador REAL `hermes_gateway` contra el mock de Hermes (SIMULADO)
+Informe completo: docs/evidencias/fallos-adaptador-mock.md (generado por tests/lab/fallos.test.mjs). 9 agentes "[auto-test fallos]" creados y pausados al terminar.
+| Escenario | Observado | Veredicto |
+| --- | --- | --- |
+| Camino feliz | assignment succeeded 3,1 s; MC-MOCK-OK; Idempotency-Key = id del run; X-Hermes-Session-Key por tarea; 2 runs de reparación → blocked → revisión → done; tokens 801/18 unpriced | cubre |
+| Corte de SSE (tras 2 eventos) | el adaptador reconecta y además sondea el estado; run succeeded 4,7 s; sin duplicar; log "event stream disconnected: terminated" | cubre |
+| Ejecutor colgado | timeoutSec 15 → run timed_out (errorCode `timeout`) a 16,1 s; POST /stop al mock; sin reintento | cubre |
+| Fallo del run | failed, errorCode hermes_gateway_run_failed; 1 solo run en 90 s; issue blocked; evento "Automatic recovery stopped" | cubre |
+| Clave rechazada (401) | failed, errorCode hermes_gateway_auth_failed, mensaje accionable; sin tormenta de reintentos | cubre |
+| 429 (concurrencia) | failed, hermes_gateway_rate_limited; sin reintento ni respeto de Retry-After | parcial (MC debe encolar) |
+| Duplicados (invoke ×2) | aserción de la prueba mal planteada con duplicateReplayAsNew; pendiente de corregir la prueba | no cubre (prueba) |
+| Reinicio del ejecutor a mitad | el run remoto se pierde; Paperclip cierra timed_out a los 45 s (404 del mock reiniciado → "falling back to polling"); sin runs adicionales; issue blocked con `issue.execution_recovery_settled {replay: not_authorized, outcome: blocked}` | parcial (MC debe detectar y re-despachar) |
+Lo que NO demuestra: mock ≠ Hermes real; un solo equipo; sin HTTPS; reinicio del servidor Paperclip no simulado; coste en dinero no demostrado.
+
+## 2026-10-08 08:35–08:40 UTC — Restauración completa probada entre dos instancias de Paperclip (laboratorio)
+Informe literal: docs/evidencias/restauracion-lab.md. Scripts: scripts/common/{backup-full,restore-files,restore-db,verify-restore}.mjs (ejecutados de verdad en Linux).
+- `db:backup --json` con la instancia viva arriba → paperclip-20261008-083519.sql.gz (141 949 bytes).
+- Segunda instancia nueva en el puerto 3102 (PostgreSQL embebido en 54330, no 54329) → `/api/companies` = [].
+- Copia de `secrets/master.key`, `decision-signing.key` y `.env` + `restore-db.mjs --no-psql` (motor JS de `runDatabaseRestore`, 2515 sentencias, 8,4 s) → `/api/companies` lista "Mission Control — piloto"; agentes hermes_gateway con `apiKey.type == secret_ref`; secreto HERMES_API_SERVER_KEY_LAB presente; `secret-providers/health` reporta la master.key; MIS-1 `done`; los 3 secretos se descifran con la clave restaurada y fallan con una clave aleatoria. **8/8**.
+- Hallazgos: `db:backup` usa el puerto de config.json aunque PG escuche en otro (backup-full.mjs lo detecta); `invite create` necesita `{"allowedJoinTypes":"agent"}`; `join approve` exige un agente con rol `ceo` (409 si no); HTTP a IP de Tailscale → `hermes_gateway_plain_http_remote_denied`.
+- Lo que NO demuestra: Windows/macOS, servicio launchd/systemd, `update --rollback`, segundo equipo real.
+
+## 2026-10-08 09:0x UTC — Panel (`@mc/ui`) con datos REALES vía BFF en modo paperclip
+- `@mc/ui`: typecheck, build y 32/32 pruebas; 22 capturas con datos simulados (`?mock=1`) en apps/ui/docs-assets/.
+- BFF arrancado en modo paperclip (puerto 3300) sirviendo la UI compilada: `GET /api/mc/health` → paperclip reachable v2026.1005.0, catálogo 23 capacidades; `overview` → 24 misiones, 86,3 % de éxito, 20 agentes, 108 703 tokens de entrada; `ideas` → N01, N02, N05 "sin-decision".
+- Capturas con datos reales (Chromium headless): apps/ui/docs-assets/real-{cockpit,misiones,agentes,salud,ideas}.png. Cockpit muestra 25 misiones, 85 % de éxito, equipos "Sin datos" (sin node-agent conectado). Sin errores de página registrados en las vistas capturadas.

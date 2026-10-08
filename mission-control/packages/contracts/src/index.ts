@@ -500,8 +500,12 @@ export type McEvent =
 export interface SharedSettings {
   ownerName: string;
   bossAgentId?: string;
-  /** Tabla de precios por modelo (USD por millón de tokens) para estimar consumo "unpriced". */
-  modelPrices: Array<{ modelLabel: string; inputPerMTok: number; outputPerMTok: number }>;
+  /** Tabla de precios por modelo (USD por millón de tokens) para estimar consumo "unpriced". `nota` es texto libre (p. ej. "ejemplo, ajustar"). */
+  modelPrices: Array<{ modelLabel: string; inputPerMTok: number; outputPerMTok: number; nota?: string }>;
+  /** Topes que el BFF aplica a cada agente que crea (Paperclip no detecta el consumo "unpriced" de hermes_gateway). */
+  agentDefaults?: { maxDailyRuns?: number; maxDailyCostCents?: number; maxConcurrentRuns?: number };
+  /** Id del secreto de Paperclip con la clave del API server de Hermes de cada equipo (solo ids, nunca valores). */
+  hermesSecretIds?: Partial<Record<MachineId, string>>;
   /** Umbrales de alerta de salud por equipo. */
   healthThresholds: { cpuPercent: number; memPercent: number; diskPercent: number };
   /** Ruta del Registro de elecciones (solo lectura) y de la bóveda, por equipo. */
