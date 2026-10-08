@@ -121,7 +121,8 @@ export class HeartbeatLoop {
   private fail(error: string): TickResult {
     this.failures += 1;
     const max = this.o.maxBackoffMs ?? MAX_BACKOFF_MS;
-    const delayMs = Math.min(max, this.baseMs() * 2 ** this.failures);
+    // Primer reintento al intervalo base (no al doble): con 30 s + 10 s de timeout el hueco queda por debajo de los 90 s de "online" del BFF.
+    const delayMs = Math.min(max, this.baseMs() * 2 ** (this.failures - 1));
     this.o.log.warn('Latido fallido; se reintentará con retroceso exponencial', { error, failures: this.failures, retryInMs: delayMs });
     return { ok: false, delayMs, error };
   }

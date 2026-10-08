@@ -3,7 +3,7 @@
 import { useId, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { Icon } from './Icon.tsx';
-import { arcPath, GAUGE_START, GAUGE_SWEEP, gaugeEnd, heatLevel, litSegments, matrixMax, niceMax, sparkPoints } from '../lib/chart.ts';
+import { arcPath, DAY_LABELS, DAY_LONG, GAUGE_START, GAUGE_SWEEP, gaugeEnd, heatLevel, litSegments, matrixMax, niceMax, sparkPoints } from '../lib/chart.ts';
 import { SEVERITY_TEXT, severityTone, toneVar } from '../lib/status.ts';
 import type { Severity, Tone } from '../lib/status.ts';
 
@@ -234,9 +234,9 @@ export function StackedColumns({ data, series, height = 200, yLabel, ariaLabel, 
 
 /* ------------------------------------------------------------------ Mapa de calor 7×24 ------------------------------------------------------------------ */
 
-export const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-const DAY_LONG = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+export { DAY_LABELS };
 
+/** `matrix` ya viene en orden lunes-primero y con horas UTC (ver `mondayFirst`). */
 export function Heatmap({ matrix, ariaLabel }: { matrix: number[][]; ariaLabel: string }) {
   const tip = useChartTip();
   const max = matrixMax(matrix);
@@ -251,8 +251,8 @@ export function Heatmap({ matrix, ariaLabel }: { matrix: number[][]; ariaLabel: 
             <text x={padL - 8} y={padT + d * ch + ch / 2 + 4} textAnchor="end">{DAY_LABELS[d]}</text>
             {row.map((v, h) => {
               const lvl = heatLevel(v, max);
-              const text = `${DAY_LONG[d]} ${String(h).padStart(2, '0')}:00 · ${v} ${v === 1 ? 'run' : 'runs'}`;
-              const node = <div><b>{v}</b> <span className="lbl">{v === 1 ? 'run' : 'runs'}</span><div className="lbl">{DAY_LONG[d]} {String(h).padStart(2, '0')}:00</div></div>;
+              const text = `${DAY_LONG[d]} ${String(h).padStart(2, '0')}:00 UTC · ${v} ${v === 1 ? 'run' : 'runs'}`;
+              const node = <div><b>{v}</b> <span className="lbl">{v === 1 ? 'run' : 'runs'}</span><div className="lbl">{DAY_LONG[d]} {String(h).padStart(2, '0')}:00 UTC</div></div>;
               return (
                 <rect key={h} className="heat-cell" x={padL + h * cw} y={padT + d * ch} width={cw} height={ch} rx={5} tabIndex={0} aria-label={text}
                   style={{ fill: `var(--heat-${lvl})` }} onPointerMove={(e) => tip.showAtEvent(e, node)} onFocus={(e) => tip.showAtEl(e.currentTarget, node)} onBlur={tip.hide} />

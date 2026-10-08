@@ -145,6 +145,13 @@ export class DemoBackend implements McBackend {
     return new Date(ms).toISOString();
   }
 
+  /** Agente asignado o 409: tras `DELETE /agents/:id` la misión no puede operarse sin reasignarla. */
+  private assignee(m: { assigneeId?: string }): DemoAgentSeed & { createdAt: number } {
+    const a = this.agentById(m.assigneeId);
+    if (!a) throw conflict(`El agente asignado (${m.assigneeId ?? 'ninguno'}) ya no existe; crea la misión de nuevo con otro agente`, { code: 'assignee_missing' });
+    return a;
+  }
+
   private agentById(id: string | undefined): (DemoAgentSeed & { createdAt: number }) | undefined {
     return this.agents.find((a) => a.id === id);
   }
@@ -669,8 +676,9 @@ export class DemoBackend implements McBackend {
     const m = this.find(id);
     if (m.plan?.status !== 'pending') throw conflict('La misión no tiene un plan pendiente de aprobación');
     m.plan.status = 'approved';
+    const approvedBy = this.assignee(m);
     this.ev(m, this.now(), 'plan_approved', 'user', 'Plan aprobado por el operador', note ? { body: note } : {});
-    this.startExecution(m, this.agentById(m.assigneeId)!, this.now() + 1);
+    this.startExecution(m, approvedBy, this.now() + 1);
     this.pushActivity(m, 'user', 'Operador', 'plan.approved', `Plan aprobado: ${m.title}`);
     this.changed(m);
     return this.detailOf(m);
@@ -701,9 +709,10 @@ export class DemoBackend implements McBackend {
   async requestChanges(id: string, note: string): Promise<MissionDetail> {
     const m = this.find(id);
     if (!['review', 'blocked', 'delivered'].includes(m.status)) throw conflict(`No se pueden pedir cambios en estado ${m.status}`);
+    const worker = this.assignee(m);
     delete m.completedAt;
     this.ev(m, this.now(), 'message', 'user', `Cambios solicitados: ${note}`, { actorName: 'Operador', body: note });
-    this.startExecution(m, this.agentById(m.assigneeId)!, this.now() + 1);
+    this.startExecution(m, worker, this.now() + 1);
     this.pushActivity(m, 'user', 'Operador', 'mission.changes_requested', `Cambios solicitados: ${m.title}`);
     this.changed(m);
     return this.detailOf(m);
@@ -712,10 +721,11 @@ export class DemoBackend implements McBackend {
   async rerunMission(id: string, note?: string): Promise<MissionDetail> {
     const m = this.find(id);
     if (m.status === 'briefing' || m.status === 'ongoing') throw conflict(`No se puede reintentar una misión en estado ${m.status}`);
+    const worker = this.assignee(m);
     delete m.completedAt;
     m.retryCount += 1;
     this.ev(m, this.now(), 'retry', 'user', 'Reintento solicitado por el operador', { actorName: 'Operador', ...(note ? { body: note } : {}) });
-    this.startExecution(m, this.agentById(m.assigneeId)!, this.now() + 1);
+    this.startExecution(m, worker, this.now() + 1);
     this.pushActivity(m, 'user', 'Operador', 'mission.rerun', `Reintento: ${m.title}`);
     this.changed(m);
     return this.detailOf(m);

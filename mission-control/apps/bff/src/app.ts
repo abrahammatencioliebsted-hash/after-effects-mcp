@@ -4,6 +4,7 @@ import { join, relative } from 'node:path';
 import { serveStatic } from '@hono/node-server/serve-static';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
 import type { MachineHeartbeat, McEvent, MissionStatus } from '@mc/contracts';
 import type { McBackend } from './backends/types.js';
@@ -12,6 +13,7 @@ import { openDb, type Db } from './db.js';
 import { HttpError, badRequest, conflict, notFound, unauthorized } from './errors.js';
 import { loadIdeas } from './ideas.js';
 import { MachineRegistry } from './machines.js';
+import { isAllowedHost, isAllowedOrigin } from './net.js';
 import { SettingsStore } from './settings.js';
 import { EventBus, formatSse } from './sse.js';
 import { isMissionStatus } from './status.js';
@@ -25,12 +27,12 @@ export interface Services {
   catalog: CatalogService;
 }
 
-export function buildServices(opts: { dataDir?: string | ':memory:'; catalogDir?: string; modelPricesFile?: string; now?: () => number } = {}): Services {
+export function buildServices(opts: { dataDir?: string | ':memory:'; catalogDir?: string; modelPricesFile?: string; now?: () => number; allowedHosts?: Iterable<string> } = {}): Services {
   const db = openDb(opts.dataDir ?? ':memory:');
   return {
     db,
     settings: new SettingsStore(db, opts.modelPricesFile ? { modelPricesFile: opts.modelPricesFile } : {}),
-    machines: new MachineRegistry(db, opts.now ? { now: opts.now } : {}),
+    machines: new MachineRegistry(db, { ...(opts.now ? { now: opts.now } : {}), ...(opts.allowedHosts ? { allowedHosts: opts.allowedHosts } : {}) }),
     catalog: new CatalogService(opts.catalogDir ?? join(import.meta.dirname, '../../../packages/catalog/catalog')),
   };
 }
@@ -42,6 +44,10 @@ export interface AppOptions {
   electionsFile?: string;
   /** Token compartido con los node-agent. */
   nodeAgentToken?: string;
+  /** Nombres de host (sin puerto) con los que el operador abre el panel además de loopback, IPs literales y *.ts.net (MC_ALLOWED_HOSTS). */
+  allowedHosts?: Iterable<string>;
+  /** Tamaño máximo del cuerpo JSON (2 MiB por defecto). */
+  maxBodyBytes?: number;
   /** Intervalo del latido SSE (25 s por defecto; las pruebas lo acortan). */
   sseHeartbeatMs?: number;
   /** Cada cuánto se revisan las transiciones de estado de los equipos (15 s por defecto). */
@@ -73,6 +79,9 @@ function bearerOf(c: Context): string | undefined {
 async function json(c: Context): Promise<unknown> {
   const text = await c.req.text();
   if (!text.trim()) return {};
+  // Un cuerpo no vacío exige JSON explícito: así una petición "simple" cross-origin (text/plain, sin preflight) no puede mutar nada.
+  const ct = c.req.header('content-type') ?? '';
+  if (!/^application\/json\s*(;|$)/i.test(ct)) throw new HttpError(415, 'unsupported_media_type', 'El cuerpo debe enviarse con Content-Type: application/json');
   try {
     return JSON.parse(text);
   } catch {
@@ -94,6 +103,47 @@ export function createApp(opts: AppOptions): McApp {
 
   const app = new Hono() as McApp;
   const api = new Hono();
+  const allowedHosts = new Set([...(opts.allowedHosts ?? [])].map((h) => h.toLowerCase()));
+  const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+  const hostOf = (c: Context): string | undefined => {
+    const h = c.req.header('host');
+    if (h) return h;
+    try {
+      return new URL(c.req.url).host || undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  // Cuerpo acotado (413) antes de leer nada.
+  api.use(
+    '*',
+    bodyLimit({
+      maxSize: opts.maxBodyBytes ?? 2 * 1024 * 1024,
+      onError: (c) => c.json({ error: 'Cuerpo demasiado grande (máximo 2 MiB)', code: 'payload_too_large' }, 413),
+    }),
+  );
+
+  // Defensa frente a navegadores ajenos: Host conocido (anti DNS rebinding), Origin del propio panel y JSON explícito en mutaciones.
+  // Un latido con el token correcto de node-agent viene de un proceso, no de un navegador, y queda exento.
+  api.use('*', async (c, next) => {
+    const given = bearerOf(c);
+    if (given && opts.nodeAgentToken && constantTimeEqual(given, opts.nodeAgentToken)) return next();
+    const host = hostOf(c);
+    if (!isAllowedHost(host, allowedHosts)) {
+      throw new HttpError(403, 'forbidden_host', `Host no permitido (${host ?? 'ausente'}): abre el panel por localhost, una IP, un nombre *.ts.net o añade el nombre a MC_ALLOWED_HOSTS`);
+    }
+    if (MUTATING.has(c.req.method)) {
+      const origin = c.req.header('origin');
+      if (origin && origin !== 'null' && !isAllowedOrigin(origin, host, allowedHosts)) {
+        throw new HttpError(403, 'forbidden_origin', `Origin no permitido (${origin}): las mutaciones solo se aceptan desde el propio panel`);
+      }
+      if (origin === 'null') throw new HttpError(403, 'forbidden_origin', 'Origin opaco (null) no permitido');
+      const site = c.req.header('sec-fetch-site');
+      if (site && site !== 'same-origin' && site !== 'none') throw new HttpError(403, 'forbidden_origin', `Petición ${site} de otro sitio no permitida`);
+    }
+    return next();
+  });
 
   const remoteAddr = (c: Context): string | undefined => {
     if (opts.getRemoteAddress) return opts.getRemoteAddress(c);
@@ -151,12 +201,12 @@ export function createApp(opts: AppOptions): McApp {
     const stored = db.prepare('SELECT response_json, created_at FROM idempotency WHERE key = ?').get(fullKey) as { response_json: string; created_at: number } | undefined;
     if (stored && Date.now() - stored.created_at < 24 * 3_600_000) {
       const s = JSON.parse(stored.response_json) as { fingerprint: string; missionId: string };
-      if (s.fingerprint !== fingerprint) throw conflict('Idempotency-Key ya usada con otro cuerpo', { code: 'idempotency_key_conflict' });
+      if (s.fingerprint !== fingerprint) throw new HttpError(409, 'idempotency_key_conflict', 'Idempotency-Key ya usada con otro cuerpo', { code: 'idempotency_key_conflict', missionId: s.missionId });
       c.header('Idempotent-Replayed', 'true');
       return c.json(await backend.getMission(s.missionId), 200);
     }
     const run = (async () => {
-      const detail = await backend.createMission(req);
+      const detail = await backend.createMission(req, { idempotencyKey: key });
       db.prepare('INSERT OR REPLACE INTO idempotency(key, response_json, created_at) VALUES(?,?,?)').run(fullKey, JSON.stringify({ fingerprint, missionId: detail.id }), Date.now());
       return detail;
     })();
@@ -199,7 +249,7 @@ export function createApp(opts: AppOptions): McApp {
       if (!addr || !LOOPBACK.has(addr)) throw unauthorized('Sin MC_NODE_AGENT_TOKEN solo se aceptan latidos desde loopback');
     }
     const id = c.req.param('id');
-    const r = machines.heartbeat(id, await json(c));
+    const r = machines.heartbeat(id, await json(c), allowedHosts);
     if (r.changed) bus.emit({ type: 'machine.changed', machineId: id, status: r.changed.to, at: iso(Date.now()) });
     return c.json({ ok: true, nextIntervalSec: 30 });
   });

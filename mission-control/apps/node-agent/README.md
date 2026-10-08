@@ -32,6 +32,7 @@ Sin `MC_NODE_AGENT_TOKEN` las rutas protegidas responden 503.
 > Por defecto escucha solo en loopback. Para que el BFF (en otro equipo) ejecute comandos, define `MC_NODE_AGENT_HOST` (p. ej. la IP de la LAN) y protege el puerto con el firewall; el token es obligatorio.
 > **Equipos remotos (Tailscale):** fija `MC_NODE_AGENT_HOST` a la IP de Tailscale del equipo (100.x). El latido incluirá `nodeAgentUrl` (`http://<ip>:3400`) y el BFF reenviará los comandos a `http://<ip>:3400/commands/:id` con el mismo Bearer. Con el host por defecto (loopback) o un comodín (`0.0.0.0`) el campo se omite y el BFF no reenvía comandos a ese equipo.
 > Cada latido envía además `maxHeavyJobs` (de `MC_MAX_HEAVY_JOBS`) y `activeHeavyJobs: 0` (aún no se mide).
+> La URL de Hermes del latido (`MC_HERMES_URL`, por defecto `http://127.0.0.1:8642`) sirve para la comprobación local y para el sondeo de salud; el BFF solo acepta destinos loopback/privados/tailnet (`*.ts.net`, `100.64.0.0/10`) y, para crear agentes de un equipo **remoto**, usa su propia `MC_HERMES_URL_<MACHINEID>` (la URL que alcanza Paperclip), no la del latido.
 > El latido es saliente (agente -> BFF), así que para solo reportar salud no hace falta abrir ningún puerto.
 
 ### Comandos permitidos

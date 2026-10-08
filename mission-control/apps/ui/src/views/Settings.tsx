@@ -5,6 +5,7 @@ import { Badge, Button, Card, ConfirmDialog, ErrorState, Field, Loading, PageHea
 import { Icon } from '../components/Icon.tsx';
 import { useApp } from '../state/AppContext.tsx';
 import { DEFAULT_CUSTOM, DEFAULT_SETTINGS, LAYOUTS, TEXT_SIZES, THEMES, TYPOGRAPHY, checkCustomTheme, exportLocalSettings, importLocalSettings } from '../lib/theme.ts';
+import { AGENT_LIMITS, completeLimits, limitValue, limitWarning, limitsInvalid } from '../lib/limits.ts';
 import type { LayoutId, LocalSettings, SchemePref, TextSize, ThemeId, TypographyId } from '../lib/theme.ts';
 
 function LayoutPreview({ id }: { id: LayoutId }) {
@@ -95,9 +96,7 @@ function Appearance() {
   );
 }
 
-/** Campos opcionales que el BFF puede añadir a SharedSettings (no están en el contrato todavía). */
-type AgentDefaults = { maxDailyRuns?: number; maxDailyCostCents?: number; maxConcurrentRuns?: number };
-type SharedExt = SharedSettings & { agentDefaults?: AgentDefaults; hermesSecretIds?: Record<string, string> };
+type SharedExt = SharedSettings;
 
 function Shared() {
   const app = useApp();
@@ -112,11 +111,12 @@ function Shared() {
   const dirty = JSON.stringify(draft) !== JSON.stringify(remote.data);
   const patch = (p: Partial<SharedExt>) => setDraft({ ...draft, ...p });
   const num = (v: string) => (v === '' ? 0 : Number(v));
-  const invalid = draft.modelPrices.some((r) => !r.modelLabel.trim() || r.inputPerMTok < 0 || r.outputPerMTok < 0 || Number.isNaN(r.inputPerMTok) || Number.isNaN(r.outputPerMTok));
+  const pricesInvalid = draft.modelPrices.some((r) => !r.modelLabel.trim() || r.inputPerMTok < 0 || r.outputPerMTok < 0 || Number.isNaN(r.inputPerMTok) || Number.isNaN(r.outputPerMTok));
+  const invalid = pricesInvalid || (draft.agentDefaults !== undefined && limitsInvalid(draft.agentDefaults));
   const save = async () => {
     setBusy(true); setError(null);
     try {
-      await api.saveSettings({ ...draft, modelPrices: draft.modelPrices.map((r) => ({ ...r, modelLabel: r.modelLabel.trim() })) });
+      await api.saveSettings({ ...draft, ...(draft.agentDefaults ? { agentDefaults: completeLimits(draft.agentDefaults) } : {}), modelPrices: draft.modelPrices.map((r) => ({ ...r, modelLabel: r.modelLabel.trim() })) });
       app.toast('ok', 'Ajustes compartidos guardados.');
       remote.reload();
     } catch (e) { setError(e instanceof Error ? e.message : 'No se pudieron guardar los ajustes.'); } finally { setBusy(false); }
@@ -168,17 +168,25 @@ function Shared() {
               </tbody>
             </table></div>
           )}
-          {invalid && <p className="err" style={{ color: 'var(--crit)', fontSize: '.82rem', marginTop: 8 }} role="alert">Cada fila necesita un nombre y precios no negativos.</p>}
+          {pricesInvalid && <p className="err" style={{ color: 'var(--crit)', fontSize: '.82rem', marginTop: 8 }} role="alert">Cada fila necesita un nombre y precios no negativos.</p>}
         </div>
 
         {draft.agentDefaults && (
           <div>
             <h3 style={{ fontSize: '.95rem', marginBottom: 4 }}>Topes por agente</h3>
-            <p className="muted" style={{ fontSize: '.82rem', marginBottom: 12 }}>Límites que el BFF aplica por defecto a cada agente (0 = sin tope).</p>
+            <p className="muted" style={{ fontSize: '.82rem', marginBottom: 12 }}>Límites que el BFF aplica por defecto a cada agente nuevo. Cada tope tiene un mínimo; el BFF ignora los valores menores y conserva el anterior.</p>
             <div className="form-grid" style={{ gridTemplateColumns: 'repeat(3, minmax(0,1fr))' }}>
-              {([['maxDailyRuns', 'Runs por día'], ['maxDailyCostCents', 'Coste diario (centavos)'], ['maxConcurrentRuns', 'Runs simultáneos']] as const).map(([k, l]) => (
-                <Field key={k} label={l}>{(id) => <input id={id} type="number" min={0} className="input" value={draft.agentDefaults?.[k] ?? 0} onChange={(e) => patch({ agentDefaults: { ...draft.agentDefaults, [k]: Math.max(0, num(e.target.value)) } })} />}</Field>
-              ))}
+              {AGENT_LIMITS.map((spec) => {
+                const value = limitValue(spec, draft.agentDefaults);
+                const warn = limitWarning(spec, value);
+                const set = (n: number) => patch({ agentDefaults: { ...draft.agentDefaults, [spec.key]: n } });
+                return (
+                  <Field key={spec.key} label={spec.label} hint={spec.hint} error={warn}>{(id) => (
+                    <input id={id} type="number" min={spec.min} {...(spec.max !== undefined ? { max: spec.max } : {})} step={1} className="input" aria-invalid={warn !== undefined} value={value}
+                      onChange={(e) => set(Math.min(spec.max ?? Infinity, Math.max(0, Math.floor(num(e.target.value)))))} />
+                  )}</Field>
+                );
+              })}
             </div>
           </div>
         )}

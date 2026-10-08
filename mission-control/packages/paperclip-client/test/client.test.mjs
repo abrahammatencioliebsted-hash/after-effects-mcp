@@ -173,8 +173,8 @@ test('listHeartbeatRuns y costsByAgent pasan parámetros', async () => {
   const c = createPaperclipClient({ baseUrl });
   await c.listHeartbeatRuns(C, { agentId: 'a1', limit: 5, summary: true });
   assert.equal(last().url, `/api/companies/${C}/heartbeat-runs?agentId=a1&limit=5&summary=true`);
-  await c.costsByAgent(C, { period: 'all' });
-  assert.equal(last().url, `/api/companies/${C}/costs/by-agent?period=all`);
+  await c.costsByAgent(C, { from: '2026-10-01T00:00:00.000Z' });
+  assert.equal(last().url, `/api/companies/${C}/costs/by-agent?from=2026-10-01T00%3A00%3A00.000Z`);
 });
 
 test('createAgent envía JSON y content-type; approve usa cuerpo vacío por defecto; runRoutine', async () => {

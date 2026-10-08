@@ -30,6 +30,9 @@ Al terminar escribe el informe Markdown (tabla + JSON bruto plegado por escenari
 
 ## Reglas de seguridad de la prueba
 
+- **El informe versionado no se pisa a medias.** La suite escribe siempre su informe en `lab/.runtime/fallos-<fecha>.md|json` (ignorado por git) y solo reemplaza `docs/evidencias/fallos-adaptador-mock.md` cuando la ejecución fue completa (8 escenarios, sin `MC_FALLOS_ONLY`) y sin aserciones fallidas; `MC_FALLOS_REPORT=<ruta>` fuerza la escritura.
+- **Secretos que quedan en Paperclip.** Cada ejecución crea un secreto `HERMES_MOCK_KEY <marca>` con la clave del mock (distinta en cada corrida) y no lo borra: el build `paperclipai@2026.1005.0` solo expone `GET/POST /secrets` (sin `DELETE`). Se acumulan uno por ejecución; límpialos desde la UI de Paperclip si molestan. Lo mismo hace `lab/e2e.mjs` salvo que se le pase `HERMES_SECRET_ID`.
+
 - El mock escucha solo en `127.0.0.1:18642`; **no** toca el Hermes real (8642), el modelo simulado (8700) ni cierra Paperclip.
 - Todo objeto creado en Paperclip lleva el prefijo `[auto-test fallos]` (secreto, agentes, tareas). No se tocan MIS-1/MIS-2 ni los agentes o secretos existentes.
 - La clave del mock se genera en cada ejecución (`randomBytes`), se guarda como secreto de Paperclip (el agente la referencia con `secret_ref`) y se redacta de cualquier texto del informe. No hay credenciales en el código.

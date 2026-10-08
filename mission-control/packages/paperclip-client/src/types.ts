@@ -551,9 +551,7 @@ export interface ListRunEventsParams {
 }
 
 export interface CostParams {
-  /** `all` = histórico completo (no admite from/to); `month` = mes en curso. */
-  period?: 'all' | 'month';
-  /** ISO 8601 */
+  /** ISO 8601. Paperclip 2026.1005.0 solo filtra por `from`/`to` (`parseCostDateRange`); sin ellos agrega TODO el histórico. */
   from?: string;
   /** ISO 8601 */
   to?: string;

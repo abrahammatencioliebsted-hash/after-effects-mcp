@@ -11,8 +11,7 @@ import { go, useMediaQuery, useResource } from '../state/hooks.ts';
 import type { Route } from '../lib/router.ts';
 import { agentStateInfo, platformLabel, runStatusInfo } from '../lib/status.ts';
 import { costStatusLabel, formatCents, formatDateTime, formatDuration, formatTime, formatTokens, plural, relativeTime, totalTokens, pct } from '../lib/format.ts';
-import { normalizeHeatmap, sumByDay, sumByHour } from '../lib/chart.ts';
-import { DAY_LABELS } from '../components/charts.tsx';
+import { DAY_LABELS, mondayFirst, normalizeHeatmap, sumByDay, sumByHour } from '../lib/chart.ts';
 
 function AgentPanel({ a, onClose }: { a: AgentSummary; onClose?: (() => void) | undefined }) {
   const app = useApp();
@@ -99,7 +98,8 @@ export function AgentsView({ route }: { route: Route }) {
   const [heatMode, setHeatMode] = useState<'grid' | 'hour' | 'day'>('grid');
   const counts = { working: 0, available: 0, other: 0 };
   for (const a of agents) { if (a.state === 'working') counts.working++; else if (a.state === 'available') counts.available++; else counts.other++; }
-  const matrix = normalizeHeatmap(ov.data?.heatmap);
+  // El BFF entrega fila 0 = domingo y horas UTC; se pinta lunes-primero.
+  const matrix = mondayFirst(normalizeHeatmap(ov.data?.heatmap));
   const hasHeat = matrix.some((r) => r.some((v) => v > 0));
 
   return (
@@ -141,14 +141,14 @@ export function AgentsView({ route }: { route: Route }) {
       {route.id && app.agents.data && !selected && <p className="muted" role="status" style={{ marginTop: 12 }}>El agente «{route.id}» ya no existe.</p>}
 
       <div className="grid split" style={{ marginTop: 16 }}>
-        <Card title="Mapa de calor de actividad" sub="Runs por hora y día de la semana (últimos 14 días)" right={
+        <Card title="Mapa de calor de actividad" sub="Runs por hora y día de la semana (últimos 14 días · horas UTC)" right={
           <Segmented<typeof heatMode> label="Vista del mapa de calor" value={heatMode} onChange={setHeatMode} options={[{ value: 'grid', label: '7 × 24' }, { value: 'hour', label: '24 h' }, { value: 'day', label: '7 días' }]} />}>
           {ov.loading ? <Loading rows={3} /> : ov.error && !ov.data ? <ErrorState error={ov.error} onRetry={ov.reload} what="el mapa de calor" /> : !hasHeat ? <Empty icon="activity" title="Sin actividad registrada">Cuando los agentes ejecuten runs, verás aquí cuándo trabajan más.</Empty> : heatMode === 'grid' ? (
             <Heatmap matrix={matrix} ariaLabel="Mapa de calor de runs por hora y día de la semana" />
           ) : heatMode === 'hour' ? (
-            <StackedColumns yLabel="runs" height={190} ariaLabel="Runs por hora del día" series={[{ key: 'v', name: 'Runs', color: 'var(--accent)' }]} data={sumByHour(matrix).map((v, h) => ({ label: String(h).padStart(2, '0'), tipLabel: `${String(h).padStart(2, '0')}:00`, values: { v } }))} />
+            <StackedColumns yLabel="runs" height={190} ariaLabel="Runs por hora UTC del día" series={[{ key: 'v', name: 'Runs', color: 'var(--accent)' }]} data={sumByHour(matrix).map((v, h) => ({ label: String(h).padStart(2, '0'), tipLabel: `${String(h).padStart(2, '0')}:00 UTC`, values: { v } }))} />
           ) : (
-            <StackedColumns yLabel="runs" height={190} ariaLabel="Runs por día de la semana" series={[{ key: 'v', name: 'Runs', color: 'var(--accent)' }]} data={sumByDay(matrix).map((v, d) => ({ label: DAY_LABELS[d] ?? '', tipLabel: DAY_LABELS[d] ?? '', values: { v } }))} />
+            <StackedColumns yLabel="runs" height={190} ariaLabel="Runs por día de la semana (días según UTC)" series={[{ key: 'v', name: 'Runs', color: 'var(--accent)' }]} data={sumByDay(matrix).map((v, d) => ({ label: DAY_LABELS[d] ?? '', tipLabel: DAY_LABELS[d] ?? '', values: { v } }))} />
           )}
         </Card>
         <Card title="Actividad reciente" sub="Registro de lo que hacen los agentes" flush>

@@ -6,6 +6,7 @@ import { buildServices, createApp, type McApp, type Services } from './app.js';
 import { DemoBackend } from './backends/demo.js';
 import { PaperclipBackend } from './backends/paperclip.js';
 import { BFF_VERSION, type McBackend } from './backends/types.js';
+import { parseHostList } from './net.js';
 
 const PKG_ROOT = resolve(import.meta.dirname, '..');
 
@@ -22,6 +23,10 @@ export interface ServerConfig {
   electionsFile?: string;
   modelPricesFile?: string;
   staticDir: string;
+  /** MC_ALLOWED_HOSTS: nombres de host adicionales con los que se abre el panel (coma). */
+  allowedHosts: string[];
+  /** MC_LOCAL_MACHINE_ID: equipo donde corren Paperclip y el BFF; solo su Hermes puede ser loopback (win-principal por defecto). */
+  localMachineId: string;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ServerConfig {
@@ -37,6 +42,8 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ServerConfi
     dataDir: resolve(env.MC_DATA_DIR || './data'),
     catalogDir: resolve(PKG_ROOT, env.MC_CATALOG_PATH || '../../packages/catalog/catalog'),
     staticDir: resolve(PKG_ROOT, env.MC_STATIC_DIR || '../ui/dist'),
+    allowedHosts: [...parseHostList(env.MC_ALLOWED_HOSTS)],
+    localMachineId: (env.MC_LOCAL_MACHINE_ID || 'win-principal').trim(),
   };
   if (env.MC_PAPERCLIP_TOKEN) cfg.paperclipToken = env.MC_PAPERCLIP_TOKEN;
   if (env.MC_PAPERCLIP_COMPANY_ID) cfg.companyId = env.MC_PAPERCLIP_COMPANY_ID;
@@ -55,7 +62,7 @@ export interface RunningServer {
 }
 
 export async function startServer(cfg: ServerConfig, log: (line: string) => void = console.log): Promise<RunningServer> {
-  const services = buildServices({ dataDir: cfg.dataDir, catalogDir: cfg.catalogDir, ...(cfg.modelPricesFile ? { modelPricesFile: cfg.modelPricesFile } : {}) });
+  const services = buildServices({ dataDir: cfg.dataDir, catalogDir: cfg.catalogDir, allowedHosts: cfg.allowedHosts, ...(cfg.modelPricesFile ? { modelPricesFile: cfg.modelPricesFile } : {}) });
   const deps = { ...services };
   const backend: McBackend =
     cfg.mode === 'paperclip'
@@ -64,6 +71,8 @@ export async function startServer(cfg: ServerConfig, log: (line: string) => void
           baseUrl: cfg.paperclipUrl,
           ...(cfg.companyId ? { companyId: cfg.companyId } : {}),
           nodeAgentTokenSet: Boolean(cfg.nodeAgentToken),
+          localMachineId: cfg.localMachineId,
+          allowedHosts: cfg.allowedHosts,
         })
       : new DemoBackend(deps);
   const app = createApp({
@@ -71,6 +80,7 @@ export async function startServer(cfg: ServerConfig, log: (line: string) => void
     services,
     ...(cfg.electionsFile ? { electionsFile: cfg.electionsFile } : {}),
     ...(cfg.nodeAgentToken ? { nodeAgentToken: cfg.nodeAgentToken } : {}),
+    allowedHosts: cfg.allowedHosts,
     staticDir: cfg.staticDir,
   });
   await backend.start();
@@ -94,6 +104,8 @@ export async function startServer(cfg: ServerConfig, log: (line: string) => void
   log(`  Catálogo        ${cfg.catalogDir}`);
   log(`  UI estática     ${existsSync(resolve(cfg.staticDir, 'index.html')) ? cfg.staticDir : 'no encontrada (solo API)'}`);
   log(`  Node-agent      ${cfg.nodeAgentToken ? 'token configurado' : cfg.mode === 'paperclip' ? 'SIN TOKEN: latidos desactivados' : 'sin token: latidos solo desde loopback'}`);
+  log(`  Hosts del panel loopback, IPs, *.ts.net${cfg.allowedHosts.length ? `, ${cfg.allowedHosts.join(', ')}` : ''}  (MC_ALLOWED_HOSTS)`);
+  log(`  Equipo local    ${cfg.localMachineId}  (MC_LOCAL_MACHINE_ID: único cuyo Hermes puede ser loopback)`);
   log(bar);
 
   return {

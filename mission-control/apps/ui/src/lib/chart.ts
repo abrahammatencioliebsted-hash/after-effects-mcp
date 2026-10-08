@@ -74,6 +74,18 @@ export function sumByDay(m: number[][]): number[] {
   return out;
 }
 
+/** Etiquetas de día en orden lunes-primero (el orden en que se pinta el mapa de calor). */
+export const DAY_LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+export const DAY_LONG = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+/**
+ * Contrato visual del mapa de calor: el BFF entrega la matriz con fila 0 = domingo y columnas = hora UTC
+ * (`getUTCDay`/`getUTCHours`). La UI la rota a lunes-primero para pintarla con `DAY_LABELS`.
+ */
+export function mondayFirst(m: number[][]): number[][] {
+  return [...m.slice(1), ...m.slice(0, 1)];
+}
+
 /** Normaliza cualquier matriz recibida a 7×24 numérica. */
 export function normalizeHeatmap(m: number[][] | undefined): number[][] {
   const out: number[][] = [];

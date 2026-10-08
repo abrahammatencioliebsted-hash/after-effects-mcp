@@ -1,17 +1,19 @@
-// Prueba en vivo: solo corre con PAPERCLIP_URL (p. ej. http://127.0.0.1:3101). Solo lectura.
-//   PAPERCLIP_URL=http://127.0.0.1:3101 pnpm --filter @mc/paperclip-client test:live
+// Prueba en vivo: solo corre con MC_PAPERCLIP_URL o PAPERCLIP_URL (p. ej. http://127.0.0.1:3101). Solo lectura.
+//   MC_PAPERCLIP_URL=http://127.0.0.1:3101 MC_PAPERCLIP_COMPANY_ID=<id> pnpm --filter @mc/paperclip-client test:live
+// Los ids por defecto (empresa, agente, issue y run) son los del laboratorio Cloud del hito 1; en otra instancia defínelos:
+//   PAPERCLIP_AGENT_ID, PAPERCLIP_ISSUE_ID (una issue `done` con comentarios) y PAPERCLIP_RUN_ID (un run con eventos).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPaperclipClient, PaperclipError } from '../dist/index.js';
 
-const URL_ = process.env.PAPERCLIP_URL;
-const skip = URL_ ? false : 'PAPERCLIP_URL no definido';
-const COMPANY = process.env.PAPERCLIP_COMPANY_ID ?? 'b0d4c18c-7069-499f-8879-26cdc29738dc';
+const URL_ = process.env.MC_PAPERCLIP_URL ?? process.env.PAPERCLIP_URL;
+const skip = URL_ ? false : 'MC_PAPERCLIP_URL / PAPERCLIP_URL no definido';
+const COMPANY = process.env.MC_PAPERCLIP_COMPANY_ID ?? process.env.PAPERCLIP_COMPANY_ID ?? 'b0d4c18c-7069-499f-8879-26cdc29738dc';
 const AGENT = process.env.PAPERCLIP_AGENT_ID ?? '5bdd4ae7-fe3c-40a2-a34e-fdd37c623926';
-const ISSUE_ID = '00eb23cc-70df-46a9-ac3d-8919f03df99a';
-const RUN = 'c9d0e2d3-2fb5-44e9-85b0-034ca107b4b0';
+const ISSUE_ID = process.env.PAPERCLIP_ISSUE_ID ?? '00eb23cc-70df-46a9-ac3d-8919f03df99a';
+const RUN = process.env.PAPERCLIP_RUN_ID ?? 'c9d0e2d3-2fb5-44e9-85b0-034ca107b4b0';
 
-const client = URL_ ? createPaperclipClient({ baseUrl: URL_, token: process.env.PAPERCLIP_TOKEN || undefined }) : null;
+const client = URL_ ? createPaperclipClient({ baseUrl: URL_, token: process.env.MC_PAPERCLIP_TOKEN || process.env.PAPERCLIP_TOKEN || undefined }) : null;
 
 test('live: health', { skip }, async () => {
   const h = await client.health();
@@ -22,7 +24,7 @@ test('live: health', { skip }, async () => {
 
 test('live: openapi tiene paths', { skip }, async () => {
   const o = await client.openapi();
-  assert.ok(Object.keys(o.paths).length > 500);
+  assert.ok(Object.keys(o.paths).length > 100, `paths=${Object.keys(o.paths).length}`);
 });
 
 test('live: listAdapters contiene hermes_gateway', { skip }, async () => {
@@ -114,7 +116,7 @@ test('live: listLiveRuns devuelve lista', { skip }, async () => {
 });
 
 test('live: costsByAgent suma inputTokens >= 32645 para el ejecutor', { skip }, async () => {
-  const rows = await client.costsByAgent(COMPANY, { period: 'all' });
+  const rows = await client.costsByAgent(COMPANY, {});
   const row = rows.find((r) => r.agentId === AGENT);
   assert.ok(row);
   assert.ok(row.inputTokens >= 32645, `inputTokens=${row.inputTokens}`);

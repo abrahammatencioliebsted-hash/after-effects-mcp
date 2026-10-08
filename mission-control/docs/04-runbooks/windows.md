@@ -216,6 +216,9 @@ $env:MC_BACKEND = 'paperclip'
 $env:MC_PAPERCLIP_URL = 'http://127.0.0.1:3100'       # puerto real de Paperclip
 $env:MC_PAPERCLIP_COMPANY_ID = '<id de la empresa>'
 $env:MC_NODE_AGENT_TOKEN = Get-Content -Raw "$env:USERPROFILE\.mc\node-agent\token"
+$env:MC_LOCAL_MACHINE_ID = 'win-principal'           # equipo donde corren Paperclip y el BFF (su Hermes puede ser loopback)
+# $env:MC_HERMES_URL_WIN_LAPTOP_1 = 'https://b.tail1234.ts.net'   # obligatoria por cada equipo remoto (ver segundo-equipo.md)
+# $env:MC_ALLOWED_HOSTS = 'mi-pc.lan'                 # solo si abres el panel por un nombre que no sea localhost / IP / *.ts.net
 node apps\bff\dist\main.js                             # sirve /api/mc y la UI compilada (apps\ui\dist) en http://127.0.0.1:3300
 ```
 - Sin `MC_BACKEND=paperclip` el BFF arranca en modo **demo** (datos simulados y etiquetados en pantalla).

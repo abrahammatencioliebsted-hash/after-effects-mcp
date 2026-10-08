@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { PaperclipError, type PaperclipAgent, type PaperclipClient, type PaperclipHeartbeatRun, type PaperclipIssue } from '@mc/paperclip-client';
 import type {
   ActivityItem,
@@ -25,6 +25,7 @@ import type {
 } from '@mc/contracts';
 import { avg, countByStatus, emptyTokens, heatmapFrom, runsInWindow, successRate, sumTokens } from '../aggregate.js';
 import { HttpError, badRequest, conflict, notFound } from '../errors.js';
+import { isLoopbackUrl, validateHermesBaseUrl } from '../net.js';
 import { actionAllowed, isPriority, mapIssueStatus, paperclipStatusesFor, type MissionAction } from '../status.js';
 import { activityToTimeline, commentsToTimeline, isRetryRun, mergeTimeline, runsToTimeline } from '../timeline.js';
 import { asRecord, excerpt, iso, num, paginate, str, wordCount } from '../util.js';
@@ -38,6 +39,10 @@ export interface PaperclipBackendOptions {
   pollMs?: number;
   /** ¿Hay token de node-agent configurado? (solo para las notas de salud) */
   nodeAgentTokenSet?: boolean;
+  /** Equipo donde corren Paperclip y el BFF: solo su Hermes puede anunciarse en loopback (MC_LOCAL_MACHINE_ID, win-principal por defecto). */
+  localMachineId?: MachineId;
+  /** Nombres de host adicionales admitidos como destino de Hermes (MC_ALLOWED_HOSTS). */
+  allowedHosts?: Iterable<string>;
   fetchImpl?: typeof fetch;
 }
 
@@ -175,10 +180,28 @@ export class PaperclipBackend implements McBackend {
     return this.cached('runs', 3000, () => this.c.listHeartbeatRuns(cid, { limit: 1000 }));
   }
 
-  /** `GET /issues/{id}/runs` (devuelve `runId` en vez de `id`); se normaliza a la forma de heartbeat-run. */
-  private async issueRuns(issueId: string): Promise<PaperclipHeartbeatRun[]> {
-    const list = await this.c.request<Array<Record<string, unknown>>>('GET', `/issues/${issueId}/runs`).catch(() => [] as Array<Record<string, unknown>>);
+  /** `GET /issues/{id}/runs` (devuelve `runId` en vez de `id`); se normaliza a la forma de heartbeat-run. Lanza si Paperclip falla. */
+  private async issueRunsStrict(issueId: string): Promise<PaperclipHeartbeatRun[]> {
+    const list = await this.c.request<Array<Record<string, unknown>>>('GET', `/issues/${issueId}/runs`);
     return list.map((r) => ({ ...r, id: str(r.id) ?? str(r.runId) ?? '' }) as unknown as PaperclipHeartbeatRun).filter((r) => r.id);
+  }
+
+  /** Versión tolerante para el detalle (datos parciales aceptables): ante error devuelve lista vacía. */
+  private async issueRuns(issueId: string): Promise<PaperclipHeartbeatRun[]> {
+    return this.issueRunsStrict(issueId).catch(() => []);
+  }
+
+  /**
+   * Para decisiones (detener, despertar) no se traga el error: si `/issues/{id}/runs` falla se consulta la lista de la empresa
+   * (que incluye `contextSnapshot.issueId`); si también falla, el error se propaga (503 paperclip_unreachable).
+   */
+  private async issueRunsForDecision(issueId: string): Promise<PaperclipHeartbeatRun[]> {
+    try {
+      return await this.issueRunsStrict(issueId);
+    } catch {
+      this.invalidate();
+      return (await this.rawRuns()).filter((r) => this.runIssueId(r) === issueId);
+    }
   }
 
   private async rawLive(): Promise<PaperclipHeartbeatRun[]> {
@@ -362,7 +385,7 @@ export class PaperclipBackend implements McBackend {
       durationSec: runs.reduce((s, r) => s + (r.durationSec ?? 0), 0),
       tokens: sumTokens(runs.map((r) => r.tokens)),
       retryCount: retries,
-      approvalPending: this.latestPlan(i.id)?.status === 'pending',
+      approvalPending: i.status !== 'done' && i.status !== 'cancelled' && this.latestPlan(i.id)?.status === 'pending',
       childCount: kids.length,
       childDoneCount: kids.filter((k) => k.status === 'done').length,
       ...(meta?.idea_id ? { ideaId: meta.idea_id } : {}),
@@ -497,7 +520,8 @@ export class PaperclipBackend implements McBackend {
       const label = a.modelLabel ?? 'sin modelo informado';
       models.set(label, (models.get(label) ?? 0) + 1);
     }
-    const planPending = (this.deps.db.prepare("SELECT COUNT(*) AS n FROM plans WHERE status = 'pending'").get() as { n: number }).n;
+    const pendingPlanIssues = new Set((this.deps.db.prepare("SELECT issue_id FROM plans WHERE status = 'pending'").all() as Array<{ issue_id: string }>).map((r) => r.issue_id));
+    const planPending = issues.filter((i) => pendingPlanIssues.has(i.id) && i.status !== 'done' && i.status !== 'cancelled').length;
     return {
       mode: 'paperclip',
       generatedAt: iso(now),
@@ -625,7 +649,9 @@ export class PaperclipBackend implements McBackend {
         e.body = `Nota: run fallido; el texto del agente es parcial y no se presenta como resultado.\n\n${e.body ?? ''}`;
       }
     }
-    const children = issues.filter((k) => k.parentId === issue.id).map((k) => this.summarize(k, { agents, runsByIssue: new Map(), issues }));
+    // Las hijas se resumen con TODOS los runs de la empresa agrupados por issue (no solo los de la padre).
+    const allRunsByIssue = await this.runsByIssue();
+    const children = issues.filter((k) => k.parentId === issue.id).map((k) => this.summarize(k, { agents, runsByIssue: allRunsByIssue, issues }));
     const unknownModel = runs.every((r) => !r.modelLabel);
     const provenance: ProvenanceNote[] = [
       { component: 'Misión', state: 'real', note: `Issue ${issue.identifier} de Paperclip (${this.baseUrl}).` },
@@ -661,11 +687,14 @@ export class PaperclipBackend implements McBackend {
 
   // ---------------------------------------------------------------- crear misión
 
-  async createMission(req: MissionCreateRequest): Promise<MissionDetail> {
+  async createMission(req: MissionCreateRequest, copts: { idempotencyKey?: string } = {}): Promise<MissionDetail> {
     const cid = await this.company();
     const agents = await this.agentIndex();
-    const missionUuid = randomUUID();
-    const short = missionUuid.slice(0, 6);
+    // Con Idempotency-Key del cliente, las claves que viajan a Paperclip son deterministas: si la hija falla y el cliente
+    // reintenta con la misma cabecera, Paperclip devuelve la misma padre (deduplicated) en vez de crear otra.
+    const seed = copts.idempotencyKey ? createHash('sha256').update(`mc:missions:${copts.idempotencyKey}`).digest('hex') : undefined;
+    const missionUuid = seed ? `mc:${seed.slice(0, 48)}` : randomUUID();
+    const short = (seed ?? missionUuid).slice(0, 6);
     let assigneeId: string | undefined;
     let extra: AgentInfo[] = [];
     let plan: Omit<MissionPlan, 'id' | 'status'> | undefined;
@@ -732,14 +761,15 @@ export class PaperclipBackend implements McBackend {
         'INSERT OR REPLACE INTO missions_meta(issue_id, identifier, objective, team_json, limits_json, finish, scope, idea_id, target_date, title, required_caps_json, retry_count, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
       )
       .run(issue.id, issue.identifier, req.objective, JSON.stringify(req.team), JSON.stringify(req.limits), req.finish, req.scope, req.ideaId ?? null, req.targetDate ?? null, req.title.trim(), JSON.stringify(req.requiredCapabilities ?? []), 0, Date.now());
-    if (plan) {
+    if (plan && !this.latestPlan(issue.id)) {
       const planId = randomUUID();
       this.deps.db.prepare('INSERT INTO plans(id, issue_id, status, plan_json, created_at) VALUES(?,?,?,?,?)').run(planId, issue.id, 'pending', JSON.stringify({ ...plan, id: planId, status: 'pending' }), Date.now());
     }
     for (const a of extra) {
-      const childUuid = randomUUID();
+      const childSeed = seed ? createHash('sha256').update(`${seed}:${a.id}`).digest('hex') : undefined;
+      const childUuid = childSeed ? `mc:${childSeed.slice(0, 48)}` : randomUUID();
       const child = await this.c.createIssue(cid, {
-        title: `${req.title.trim()} — parte de ${a.name} · ${childUuid.slice(0, 6)}`,
+        title: `${req.title.trim()} — parte de ${a.name} · ${(childSeed ?? childUuid).slice(0, 6)}`,
         description: `Subtarea de ${issue.identifier}.\n\n${req.objective.trim()}`,
         status: 'todo',
         priority: req.priority,
@@ -769,7 +799,7 @@ export class PaperclipBackend implements McBackend {
   private async ensureWake(issue: PaperclipIssue, sinceMs: number): Promise<void> {
     if (!issue.assigneeAgentId) return;
     await new Promise((r) => setTimeout(r, 400));
-    const runs = await this.issueRuns(issue.id);
+    const runs = await this.issueRunsForDecision(issue.id);
     const recent = runs.some((r) => Date.parse(r.createdAt ?? r.startedAt ?? '') >= sinceMs - 1000 && r.status !== 'cancelled');
     if (!recent) await this.c.invokeHeartbeat(issue.assigneeAgentId, { source: 'on_demand', triggerDetail: 'manual', reason: 'mc_plan_approved', payload: { issueId: issue.id }, issueId: issue.id });
   }
@@ -779,12 +809,13 @@ export class PaperclipBackend implements McBackend {
     const row = this.latestPlan(issue.id);
     if (!row || row.status !== 'pending') throw conflict('La misión no tiene un plan pendiente de aprobación');
     const t = Date.now();
-    this.deps.db.prepare("UPDATE plans SET status = 'approved', note = ?, decided_at = ? WHERE id = ?").run(note ?? null, t, row.id);
     const plan = JSON.parse(row.plan_json) as MissionPlan;
     const target = plan.steps[0]?.agentId;
     const upd: Record<string, unknown> = { status: 'todo' };
     if (target && target !== issue.assigneeAgentId) upd.assigneeAgentId = target;
+    // Primero Paperclip; el plan solo se marca aprobado si el PATCH tuvo éxito (si no, sigue pendiente y se puede reintentar).
     const updated = await this.c.updateIssue(issue.id, upd);
+    this.deps.db.prepare("UPDATE plans SET status = 'approved', note = ?, decided_at = ? WHERE id = ?").run(note ?? null, t, row.id);
     this.invalidate();
     await this.ensureWake(updated, t);
     this.invalidate();
@@ -824,13 +855,18 @@ export class PaperclipBackend implements McBackend {
     if (lock && Date.now() - Number(lock.value_json) < 60_000) throw conflict('Ya se pidió un reintento de esta misión hace menos de 60 s', { code: 'rerun_locked' });
     this.deps.db.prepare('INSERT INTO settings(key, value_json) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json').run(lockKey, String(Date.now()));
     const retryNo = (this.meta(issue.id)?.retry_count ?? 0) + 1;
-    if (issue.status !== 'in_progress') await this.c.updateIssue(issue.id, { status: 'in_progress', ...(issue.status === 'done' || issue.status === 'cancelled' ? { reopen: true } : {}) });
+    const prevStatus = issue.status;
+    const moved = prevStatus !== 'in_progress';
+    if (moved) await this.c.updateIssue(issue.id, { status: 'in_progress', ...(prevStatus === 'done' || prevStatus === 'cancelled' ? { reopen: true } : {}) });
     if (note?.trim()) await this.c.addIssueComment(issue.id, { body: `[Operador humano] Reintento solicitado: ${note.trim()}`, authorType: 'user' });
     const m = this.meta(issue.id);
     try {
       await this.wakeForRerun(issue, retryNo);
     } catch (err) {
       this.deps.db.prepare('DELETE FROM settings WHERE key = ?').run(lockKey); // el reintento no se hizo: se libera el candado
+      // Sin run, la misión no debe quedar "en curso": se devuelve al estado previo (si esto también falla, el error original manda).
+      if (moved) await this.c.updateIssue(issue.id, { status: prevStatus, comment: '[Mission Control] El reintento no pudo despertar al agente; la misión vuelve a su estado anterior.' }).catch(() => undefined);
+      this.invalidate();
       throw err;
     }
     if (m) this.deps.db.prepare('UPDATE missions_meta SET retry_count = retry_count + 1 WHERE issue_id = ?').run(issue.id);
@@ -871,7 +907,7 @@ export class PaperclipBackend implements McBackend {
 
   async stopMission(id: string, note?: string): Promise<MissionDetail> {
     const issue = await this.guard(id, 'stop');
-    const runs = await this.issueRuns(issue.id);
+    const runs = await this.issueRunsForDecision(issue.id);
     const live = runs.filter((r) => ACTIVE_RUN.has(r.status));
     for (const r of live) {
       try {
@@ -881,6 +917,8 @@ export class PaperclipBackend implements McBackend {
       }
     }
     await this.c.updateIssue(issue.id, { status: 'cancelled', comment: `[Operador humano] Misión detenida${note?.trim() ? `: ${note.trim()}` : ' desde Mission Control.'}` });
+    // Un plan pendiente de una misión detenida no puede aprobarse ya: se cierra para que no cuente como aprobación pendiente.
+    this.deps.db.prepare("UPDATE plans SET status = 'rejected', note = COALESCE(note, ?), decided_at = ? WHERE issue_id = ? AND status = 'pending'").run('Misión detenida desde Mission Control', Date.now(), issue.id);
     this.invalidate();
     return this.detail(await this.issueOf(issue.id));
   }
@@ -888,8 +926,10 @@ export class PaperclipBackend implements McBackend {
   // ---------------------------------------------------------------- agentes
 
   async listAgents(days: number): Promise<AgentSummary[]> {
-    const [agents, runsRaw, live, costs] = await Promise.all([this.agentIndex(), this.rawRuns(), this.rawLive(), this.company().then((cid) => this.c.costsByAgent(cid, { period: 'month' }).catch(() => []))]);
     const now = this.now();
+    // Paperclip solo filtra costes por from/to (sin ellos devuelve TODO el histórico): se pide el mes UTC en curso.
+    const monthStart = new Date(Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), 1)).toISOString();
+    const [agents, runsRaw, live, costs] = await Promise.all([this.agentIndex(), this.rawRuns(), this.rawLive(), this.company().then((cid) => this.c.costsByAgent(cid, { from: monthStart, to: iso(now) }).catch(() => []))]);
     const all = runsRaw.map((r) => this.toRun(r, agents));
     const win = runsInWindow(all, days, now);
     const liveBy = new Map(live.map((r) => [r.agentId, r]));
@@ -923,7 +963,8 @@ export class PaperclipBackend implements McBackend {
         runsFailed: mine.filter((r) => r.status === 'failed' || r.status === 'timed_out').length,
         tokens: sumTokens(mine.map((r) => r.tokens)),
         budgetMonthlyCents: a.raw.budgetMonthlyCents,
-        spentMonthlyCents: spentBy.get(a.id) ?? a.raw.spentMonthlyCents ?? 0,
+        // El agente de Paperclip ya trae el gasto mensual; el agregado por rango es el respaldo si faltara.
+        spentMonthlyCents: typeof a.raw.spentMonthlyCents === 'number' ? a.raw.spentMonthlyCents : (spentBy.get(a.id) ?? 0),
         origin: 'paperclip',
       } satisfies AgentSummary;
     });
@@ -938,8 +979,18 @@ export class PaperclipBackend implements McBackend {
     if (!adapterType) throw badRequest(`Plataforma no soportada para agentes ejecutores: ${req.platform}`);
     let adapterConfig: Record<string, unknown> = {};
     if (adapterType === 'hermes_gateway') {
-      const baseUrl = this.deps.machines.hermesBaseUrl(req.machineId) ?? this.hermesBaseFromEnv(req.machineId);
-      if (!baseUrl) throw new HttpError(409, 'conflict', `El equipo ${req.machineId} no ha reportado la URL del API server de Hermes (latido del node-agent). Regístrala primero.`, { machineId: req.machineId });
+      const envKey = `MC_HERMES_URL_${req.machineId.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`;
+      // La URL configurada por el operador manda; la del latido solo se usa si no hay otra y pasa la lista de destinos permitidos.
+      let baseUrl = this.hermesBaseFromEnv(req.machineId);
+      const fromBeat = this.deps.machines.hermesBaseUrl(req.machineId);
+      if (!baseUrl && fromBeat) {
+        const localId = this.opts.localMachineId ?? 'win-principal';
+        if (isLoopbackUrl(fromBeat) && req.machineId !== localId) {
+          throw new HttpError(409, 'conflict', `El node-agent de ${req.machineId} anuncia Hermes en loopback (${fromBeat}); desde el servidor de Paperclip eso sería otro equipo. Define ${envKey} con la URL que Paperclip alcanza (HTTPS en la tailnet, p. ej. https://<equipo>.<tailnet>.ts.net) o MC_LOCAL_MACHINE_ID=${req.machineId} si Paperclip corre ahí.`, { machineId: req.machineId, reportedBaseUrl: fromBeat });
+        }
+        baseUrl = validateHermesBaseUrl(fromBeat, new Set(this.opts.allowedHosts ?? []));
+      }
+      if (!baseUrl) throw new HttpError(409, 'conflict', `El equipo ${req.machineId} no ha reportado la URL del API server de Hermes (latido del node-agent) ni está definida ${envKey}. Regístrala primero.`, { machineId: req.machineId });
       const secretId = this.deps.settings.getHermesSecretId(req.machineId);
       if (!secretId) throw new HttpError(409, 'conflict', `Falta el secreto con la clave del gateway de ${req.machineId}: crea el secreto en Paperclip y registra su id con PUT /api/mc/settings (hermesSecretIds) o la variable MC_HERMES_SECRET_${req.machineId.toUpperCase().replace(/[^A-Z0-9]/g, '_')}.`, { machineId: req.machineId });
       const mimoNote = req.platform === 'mimo' ? `\nModelo: mimo${req.modelLabel ? ` (${req.modelLabel})` : ''}, configurado en el perfil de Hermes de ${req.machineId}; Paperclip no tiene adaptador propio de MiMo.` : '';
@@ -966,7 +1017,7 @@ export class PaperclipBackend implements McBackend {
       budgetMonthlyCents: req.budgetMonthlyCents ?? 500,
       ...(req.reportsTo ? { reportsTo: req.reportsTo } : {}),
       permissions: { canCreateAgents: false, canCreateSkills: false },
-      runtimeConfig: { heartbeat: { enabled: false, maxConcurrentRuns: 1, maxDailyRuns: s.agentDefaults.maxDailyRuns, maxDailyCostCents: s.agentDefaults.maxDailyCostCents } },
+      runtimeConfig: { heartbeat: { enabled: false, maxConcurrentRuns: s.agentDefaults.maxConcurrentRuns, maxDailyRuns: s.agentDefaults.maxDailyRuns, maxDailyCostCents: s.agentDefaults.maxDailyCostCents } },
       metadata: { createdBy: 'mission-control', machineId: req.machineId, platform: req.platform, shortName: req.shortName ?? req.name.trim().slice(0, 12), ...(req.modelLabel ? { modelLabel: req.modelLabel } : {}), ...(req.effort ? { effort: req.effort } : {}) },
     };
     const created = await this.c.createAgent(cid, body as never);
@@ -1216,7 +1267,16 @@ export class PaperclipBackend implements McBackend {
       pc = { reachable: false, baseUrl: this.baseUrl, error: (err as Error).message };
     }
     const targets = new Map<string, MachineId>();
-    for (const m of this.deps.machines.list()) if (m.hermes?.apiServer.baseUrl) targets.set(m.hermes.apiServer.baseUrl, m.id);
+    const allowed = new Set(this.opts.allowedHosts ?? []);
+    for (const m of this.deps.machines.list()) {
+      const u = m.hermes?.apiServer.baseUrl;
+      if (!u) continue;
+      try {
+        targets.set(validateHermesBaseUrl(u, allowed), m.id);
+      } catch {
+        /* latido antiguo con destino no permitido: no se sondea */
+      }
+    }
     if (pc.reachable) {
       try {
         for (const a of (await this.agentIndex()).values()) {

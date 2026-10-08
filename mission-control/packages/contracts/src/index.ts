@@ -467,7 +467,7 @@ export interface Overview {
   pendingApprovals: number;
   /** Serie diaria para las gráficas (últimos 14 días). */
   runActivity: Array<{ date: string; succeeded: number; failed: number; other: number }>;
-  /** Mapa de calor hora × día de la semana (7×24) de runs. */
+  /** Mapa de calor 7×24 de runs: fila 0 = domingo … fila 6 = sábado (getUTCDay), columna = hora UTC (getUTCHours). La UI rota a lunes-primero y rotula «horas UTC». */
   heatmap: number[][];
   modelsInUse: Array<{ modelLabel: string; agentCount: number }>;
 }
@@ -503,7 +503,7 @@ export interface SharedSettings {
   /** Tabla de precios por modelo (USD por millón de tokens) para estimar consumo "unpriced". `nota` es texto libre (p. ej. "ejemplo, ajustar"). */
   modelPrices: Array<{ modelLabel: string; inputPerMTok: number; outputPerMTok: number; nota?: string }>;
   /** Topes que el BFF aplica a cada agente que crea (Paperclip no detecta el consumo "unpriced" de hermes_gateway). */
-  agentDefaults?: { maxDailyRuns?: number; maxDailyCostCents?: number; maxConcurrentRuns?: number };
+  agentDefaults?: { maxDailyRuns?: number; maxDailyCostCents?: number; maxConcurrentRuns?: number; timeoutSec?: number };
   /** Id del secreto de Paperclip con la clave del API server de Hermes de cada equipo (solo ids, nunca valores). */
   hermesSecretIds?: Partial<Record<MachineId, string>>;
   /** Umbrales de alerta de salud por equipo. */
@@ -525,6 +525,11 @@ export interface ApiError {
     | 'hermes_unreachable'
     | 'unauthorized'
     | 'conflict'
+    | 'idempotency_key_conflict'
+    | 'forbidden_host'
+    | 'forbidden_origin'
+    | 'unsupported_media_type'
+    | 'payload_too_large'
     | 'simulated_only'
     | 'internal';
   details?: unknown;

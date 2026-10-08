@@ -56,7 +56,8 @@ export interface McBackend {
   overview(days: number): Promise<Overview>;
 
   listMissions(q: MissionQuery): Promise<{ items: MissionSummary[]; nextCursor?: string }>;
-  createMission(req: MissionCreateRequest): Promise<MissionDetail>;
+  /** `idempotencyKey` (cabecera del cliente) deriva las claves que viajan a Paperclip para que un reintento no cree una segunda misión. */
+  createMission(req: MissionCreateRequest, opts?: { idempotencyKey?: string }): Promise<MissionDetail>;
   getMission(id: string): Promise<MissionDetail>;
   approvePlan(id: string, note?: string): Promise<MissionDetail>;
   rejectPlan(id: string, note: string): Promise<MissionDetail>;

@@ -4,6 +4,8 @@ import type { AgentSummary, HealthReport, McEvent, SharedSettings } from '@mc/co
 import { api, isMockEnabled } from '../lib/api.ts';
 import { DEFAULT_SETTINGS, applyTheme, loadLocalSettings, saveLocalSettings } from '../lib/theme.ts';
 import type { LocalSettings } from '../lib/theme.ts';
+import { computeDegraded, recovered, resyncAfterStream } from '../lib/degraded.ts';
+import type { Degraded } from '../lib/degraded.ts';
 import { useEventStream } from '../lib/sse.ts';
 import type { StreamState } from '../lib/sse.ts';
 import { useResource } from './hooks.ts';
@@ -39,8 +41,8 @@ interface AppValue {
   settings: Resource<SharedSettings>;
   live: LiveRevs;
   stream: StreamState;
-  /** true si el BFF o Paperclip no responden */
-  degraded: { bff: boolean; paperclipBaseUrl?: string | undefined };
+  /** BFF o Paperclip caídos según el ÚLTIMO resultado de /health; `staleSince` marca los datos como «últimos conocidos» */
+  degraded: Degraded;
   /** Fuerza la recarga de las listas que dependen de `live` (p. ej. tras una acción local). */
   bump: (k: 'missions' | 'agents' | 'machines' | 'activity') => void;
   toast: (tone: Toast['tone'], text: string) => void;
@@ -129,13 +131,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
   const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
 
-  const degraded = useMemo(() => {
-    const bffDown = Boolean(health.error) && !health.data;
-    const paperclipDown = health.data && !health.data.paperclip.reachable;
-    return { bff: bffDown, paperclipBaseUrl: paperclipDown ? health.data?.paperclip.baseUrl : undefined };
-  }, [health.error, health.data]);
+  const degraded = useMemo(
+    () => computeDegraded({ data: health.data, error: health.lastError, staleSince: health.staleSince }),
+    [health.data, health.lastError, health.staleSince],
+  );
 
   const bump = useCallback((k: 'missions' | 'agents' | 'machines' | 'activity') => setLive((l) => ({ ...l, [k]: l[k] + 1 })), []);
+  const bumpAll = useCallback(() => setLive((l) => ({ ...l, missions: l.missions + 1, agents: l.agents + 1, machines: l.machines + 1, activity: l.activity + 1 })), []);
+
+  // Al recuperar el BFF (caído -> sano) se refrescan todas las listas: los datos en pantalla eran «últimos conocidos».
+  const wasBffDown = useRef(false);
+  useEffect(() => {
+    if (recovered(wasBffDown.current, degraded.bff)) bumpAll();
+    wasBffDown.current = degraded.bff;
+  }, [degraded.bff, bumpAll]);
+
+  // Tras reconectar el SSE (reconnecting -> open) pudieron perderse eventos: se re-sincroniza todo.
+  const prevStream = useRef(stream);
+  useEffect(() => {
+    if (resyncAfterStream(prevStream.current, stream)) bumpAll();
+    prevStream.current = stream;
+  }, [stream, bumpAll]);
+
+  // Sin flujo en vivo no hay eventos: sondeo lento de misiones y actividad hasta que vuelva.
+  useEffect(() => {
+    if (mock || stream === 'open' || stream === 'mock') return;
+    const t = setInterval(() => { bump('missions'); bump('activity'); }, 30_000);
+    return () => clearInterval(t);
+  }, [mock, stream, bump]);
 
   const value: AppValue = {
     mock, local, setLocal, health, agents, settings, live, stream, degraded, bump, toast, toasts, dismissToast,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AgentCreateRequest, Platform } from '@mc/contracts';
-import { Button, Field, Modal } from './ui.tsx';
+import { Button, ErrorState, Field, Loading, Modal } from './ui.tsx';
 import { Icon } from './Icon.tsx';
 import { api } from '../lib/api.ts';
 import { ROLE_PRESETS, suggestShortName } from '../lib/roles.ts';
@@ -89,7 +89,9 @@ export function AgentWizard() {
           <Field label="Nombre corto" hint="Etiqueta de su torre en la ciudad.">{(id) => <input id={id} className="input" value={shortName} maxLength={14} onChange={(e) => setShortName(e.target.value)} />}</Field>
           <Field label="Rol" full>{(id) => <input id={id} className="input" value={role} onChange={(e) => setRole(e.target.value)} />}</Field>
           <Field label="Plataforma ejecutora">{(id) => <select id={id} className="select" value={platform} onChange={(e) => setPlatform(e.target.value as Platform)}>{PLATFORMS.map((p) => <option key={p} value={p}>{platformLabel(p)}</option>)}</select>}</Field>
-          <Field label="Equipo">{(id) => <select id={id} className="select" value={machineId} onChange={(e) => setMachineId(e.target.value)}>{(machines.data ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>}</Field>
+          {machines.loading ? <div className="field"><span className="lbl">Equipo</span><Loading rows={1} label="Cargando los equipos…" /></div>
+            : machines.error && !machines.data ? <div className="field full"><span className="lbl">Equipo</span><ErrorState error={machines.error} onRetry={machines.reload} what="los equipos" /></div>
+            : <Field label="Equipo" hint={machines.data?.length === 0 ? 'No hay equipos registrados: instala node-agent en uno para poder desplegar agentes.' : undefined}>{(id) => <select id={id} className="select" value={machineId} onChange={(e) => setMachineId(e.target.value)}>{(machines.data ?? []).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>}</Field>}
           <Field label="Modelo" hint="Por defecto, el mismo que los demás agentes.">{(id) => <input id={id} className="input" value={model} onChange={(e) => setModel(e.target.value)} list="models-dl" />}</Field>
           <datalist id="models-dl">{(app.settings.data?.modelPrices ?? []).map((m) => <option key={m.modelLabel} value={m.modelLabel} />)}</datalist>
           <Field label="Instrucciones estables" full>{(id) => <textarea id={id} className="textarea" value={instructions} onChange={(e) => setInstructions(e.target.value)} />}</Field>

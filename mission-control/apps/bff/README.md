@@ -41,7 +41,7 @@ El banner muestra `MODO: PAPERCLIP`. Si Paperclip no responde, la API devuelve `
 
 ## Variables de entorno
 
-Ver `.env.example`. Resumen: `MC_BACKEND`, `MC_PORT` (3300), `MC_HOST` (127.0.0.1), `MC_PAPERCLIP_URL`, `MC_PAPERCLIP_TOKEN`, `MC_PAPERCLIP_COMPANY_ID`, `MC_NODE_AGENT_TOKEN`, `MC_DATA_DIR` (`./data`, SQLite `mc.sqlite`), `MC_CATALOG_PATH`, `MC_ELECTIONS_FILE`, `MC_MODEL_PRICES_FILE`, `MC_STATIC_DIR`, y por equipo `MC_HERMES_SECRET_<MACHINEID>`, `MC_HERMES_URL_<MACHINEID>`, `MC_NODE_AGENT_URL_<MACHINEID>` (el id en mayúsculas con `_`, p. ej. `WIN_LAPTOP_1`). No hay credenciales en el código: todo sale del entorno.
+Ver `.env.example`. Resumen: `MC_BACKEND`, `MC_PORT` (3300), `MC_HOST` (127.0.0.1), `MC_PAPERCLIP_URL`, `MC_PAPERCLIP_TOKEN`, `MC_PAPERCLIP_COMPANY_ID`, `MC_NODE_AGENT_TOKEN`, `MC_DATA_DIR` (`./data`, SQLite `mc.sqlite`), `MC_CATALOG_PATH`, `MC_ELECTIONS_FILE`, `MC_MODEL_PRICES_FILE`, `MC_STATIC_DIR`, `MC_ALLOWED_HOSTS` (hosts del panel además de localhost/IPs/`*.ts.net`), `MC_LOCAL_MACHINE_ID` (equipo de Paperclip; único cuyo Hermes puede ser loopback), y por equipo `MC_HERMES_SECRET_<MACHINEID>`, `MC_HERMES_URL_<MACHINEID>` (manda sobre el latido; obligatoria para equipos remotos), `MC_NODE_AGENT_URL_<MACHINEID>` (el id en mayúsculas con `_`, p. ej. `WIN_LAPTOP_1`). No hay credenciales en el código: todo sale del entorno. Defensas del BFF (tras la revisión independiente): `Host` conocido obligatorio (403), `Origin`/`Sec-Fetch-Site` del propio panel en mutaciones (403), JSON explícito en cuerpos (415), cuerpo ≤ 2 MiB (413) y lista de destinos permitidos para la URL de Hermes de los latidos (400).
 
 ## Qué es real y qué es simulado
 

@@ -1,6 +1,7 @@
 // Pruebas EN VIVO contra un Paperclip real. Solo corren con MC_PAPERCLIP_URL definido, p. ej.:
 //   MC_PAPERCLIP_URL=http://127.0.0.1:3101 MC_PAPERCLIP_COMPANY_ID=<id> node --test test/live.test.mjs
-// Solo crean issues con título "[auto-test] ..." (despiertan al agente real; ≤ 1 por ejecución).
+// Solo crean issues con título "[auto-test] ..." (despiertan al agente real; ≤ 1 por ejecución; cuesta ~3 runs del ejecutor:
+// asignación + 2 reparaciones de disposición). Al terminar, la misión se cancela salvo con MC_LIVE_KEEP=1.
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import { createPaperclipClient } from '@mc/paperclip-client';
@@ -14,6 +15,7 @@ const LAB_AGENT = process.env.MC_LIVE_AGENT_ID || '5bdd4ae7-fe3c-40a2-a34e-fdd37
 describe('en vivo: backend paperclip', { skip }, () => {
   let app;
   let backend;
+  let createdMissionId;
   const events = [];
 
   before(() => {
@@ -28,7 +30,12 @@ describe('en vivo: backend paperclip', { skip }, () => {
     backend.subscribe((e) => events.push(e));
     backend.start();
   });
-  after(() => {
+  after(async () => {
+    if (createdMissionId && !process.env.MC_LIVE_KEEP) {
+      await createPaperclipClient({ baseUrl: URL_, ...(process.env.MC_PAPERCLIP_TOKEN ? { token: process.env.MC_PAPERCLIP_TOKEN } : {}) })
+        .updateIssue(createdMissionId, { status: 'cancelled', comment: '[auto-test] limpieza automática al terminar la prueba en vivo' })
+        .catch(() => undefined);
+    }
     backend.stop();
     app.close();
   });
@@ -116,6 +123,7 @@ describe('en vivo: backend paperclip', { skip }, () => {
     const created = await post(app, '/api/mc/missions', body, { 'idempotency-key': key });
     assert.equal(created.status, 201, JSON.stringify(created.body));
     const id = created.body.id;
+    createdMissionId = id;
     assert.equal(created.body.title, title, 'el sufijo único no se muestra');
     assert.equal(created.body.finish, 'review_first');
     assert.equal(created.body.assigneeAgentId, LAB_AGENT);
@@ -143,6 +151,7 @@ describe('en vivo: backend paperclip', { skip }, () => {
     assert.deepEqual([...times].sort((a, b) => a - b), times);
     // el sondeo SSE detectó cambios de esta misión
     assert.ok(events.some((e) => e.type === 'mission.changed' && e.missionId === id), 'mission.changed emitido por el sondeo');
-    assert.ok(events.some((e) => e.type === 'agent.changed' && e.agentId === LAB_AGENT) || true);
+    // `agent.changed` depende de que el sondeo coincida con la ventana en que el agente está ocupado: se registra, no se exige.
+    t.diagnostic(`agent.changed observado: ${events.some((e) => e.type === 'agent.changed' && e.agentId === LAB_AGENT)}`);
   });
 });

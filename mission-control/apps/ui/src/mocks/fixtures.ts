@@ -399,8 +399,10 @@ export function buildHealth(mode: 'demo'): HealthReport {
 export function buildOverview(missions: MissionDetail[], agents: AgentSummary[], machines: MachineSummary[]): Overview {
   const byStatus: Record<MissionStatus, number> = { briefing: 0, ongoing: 0, review: 0, delivered: 0, blocked: 0, cancelled: 0 };
   for (const m of missions) byStatus[m.status]++;
+  // Misma forma que el BFF: fila 0 = domingo (getUTCDay), columnas = hora UTC.
   const heat: number[][] = [];
-  for (let d = 0; d < 7; d++) {
+  for (let s = 0; s < 7; s++) {
+    const d = (s + 6) % 7; // 0 = lunes, para el patrón laboral/fin de semana
     const row: number[] = [];
     for (let h = 0; h < 24; h++) {
       const work = h >= 8 && h <= 20 ? 1 : 0.15;

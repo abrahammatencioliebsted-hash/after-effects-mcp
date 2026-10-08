@@ -12,10 +12,10 @@ export type SharedSettingsView = Omit<SharedSettings, 'modelPrices'> & {
   /** Ids (no valores) de los secretos de Paperclip que guardan la clave del API server de Hermes por equipo. */
   hermesSecretIds: Record<string, string>;
   /** Topes por defecto de los agentes que crea MC (hermes_gateway no informa precio: el presupuesto en centavos no se dispara, los topes de runs sí). */
-  agentDefaults: { maxDailyRuns: number; maxDailyCostCents: number; timeoutSec: number };
+  agentDefaults: { maxDailyRuns: number; maxDailyCostCents: number; maxConcurrentRuns: number; timeoutSec: number };
 };
 
-export const DEFAULT_AGENT_LIMITS = { maxDailyRuns: 40, maxDailyCostCents: 500, timeoutSec: 300 };
+export const DEFAULT_AGENT_LIMITS = { maxDailyRuns: 40, maxDailyCostCents: 500, maxConcurrentRuns: 1, timeoutSec: 300 };
 
 export const DEFAULT_SETTINGS: SharedSettings & { modelPrices: ModelPrice[] } = {
   ownerName: 'Operador',
@@ -95,6 +95,7 @@ export class SettingsStore {
     const agentDefaults = {
       maxDailyRuns: typeof ad.maxDailyRuns === 'number' && ad.maxDailyRuns >= 1 ? Math.floor(ad.maxDailyRuns) : (prev.agentDefaults?.maxDailyRuns ?? DEFAULT_AGENT_LIMITS.maxDailyRuns),
       maxDailyCostCents: typeof ad.maxDailyCostCents === 'number' && ad.maxDailyCostCents >= 0 ? Math.floor(ad.maxDailyCostCents) : (prev.agentDefaults?.maxDailyCostCents ?? DEFAULT_AGENT_LIMITS.maxDailyCostCents),
+      maxConcurrentRuns: typeof ad.maxConcurrentRuns === 'number' && ad.maxConcurrentRuns >= 1 ? Math.min(8, Math.floor(ad.maxConcurrentRuns)) : (prev.agentDefaults?.maxConcurrentRuns ?? DEFAULT_AGENT_LIMITS.maxConcurrentRuns),
       timeoutSec: typeof ad.timeoutSec === 'number' && ad.timeoutSec >= 10 ? Math.floor(ad.timeoutSec) : (prev.agentDefaults?.timeoutSec ?? DEFAULT_AGENT_LIMITS.timeoutSec),
     };
     const next: SharedSettings & { agentDefaults: typeof agentDefaults } = {

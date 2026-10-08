@@ -197,11 +197,21 @@ describe('Fallos del adaptador hermes_gateway (Paperclip real + mock de Hermes)'
       '**Coste.** Los tokens del mock se registran en `usageJson`, pero `costStatus` queda `unpriced` y el coste en centavos es 0: la contabilidad en dinero no se demuestra.',
     ];
     const md = renderReport({ env, rows, generatedUtc: utc(), noDemuestra });
-    fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
-    fs.writeFileSync(REPORT_PATH, md);
+    // El informe siempre se escribe en .runtime/ (ignorado por git). La evidencia versionada solo se reemplaza cuando la
+    // ejecución fue completa (8 escenarios, sin MC_FALLOS_ONLY) y sin aserciones fallidas, o si se fuerza con MC_FALLOS_REPORT.
     fs.mkdirSync(RUNTIME_DIR, { recursive: true });
-    fs.writeFileSync(path.join(RUNTIME_DIR, `fallos-${utc().replace(/[:.]/g, '-')}.json`), JSON.stringify({ env, rows }, null, 2));
-    console.log(`Informe: ${REPORT_PATH}`);
+    const stampFs = utc().replace(/[:.]/g, '-');
+    const runtimeMd = path.join(RUNTIME_DIR, `fallos-${stampFs}.md`);
+    fs.writeFileSync(runtimeMd, md);
+    fs.writeFileSync(path.join(RUNTIME_DIR, `fallos-${stampFs}.json`), JSON.stringify({ env, rows }, null, 2));
+    const completa = ONLY.length === 0 && rows.length === 8 && rows.every((r) => !String(r.resultado).includes('ASERCIÓN FALLÓ'));
+    if (completa || process.env.MC_FALLOS_REPORT) {
+      fs.mkdirSync(path.dirname(REPORT_PATH), { recursive: true });
+      fs.writeFileSync(REPORT_PATH, md);
+      console.log(`Informe: ${REPORT_PATH} (copia en ${runtimeMd})`);
+    } else {
+      console.log(`Informe parcial o con fallos: ${runtimeMd} (la evidencia versionada ${REPORT_PATH} NO se tocó; usa MC_FALLOS_REPORT para forzar)`);
+    }
   });
 
   /* =========================================================================================== */

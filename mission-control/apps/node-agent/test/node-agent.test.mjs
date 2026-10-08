@@ -337,7 +337,7 @@ test('heartbeat: con HTTP 500 retrocede exponencialmente (tope 5 min) y se recup
       assert.match(r.error, /HTTP 500/);
       delays.push(r.delayMs);
     }
-    assert.deepEqual(delays, [60_000, 120_000, 240_000, 300_000, 300_000, 300_000]);
+    assert.deepEqual(delays, [30_000, 60_000, 120_000, 240_000, 300_000, 300_000]);
     assert.equal(loop.consecutiveFailures, 6);
     status = 200;
     const ok = await loop.tick();

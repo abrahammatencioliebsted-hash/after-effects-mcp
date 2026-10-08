@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { missionStatusInfo, agentStateInfo, priorityInfo, comparePriority, severityFor, severityTone, compatInfo, machineStatusInfo, toneVar, KANBAN_COLUMNS, MISSION_STATUSES } from '../src/lib/status.ts';
+import { missionStatusInfo, agentStateInfo, priorityInfo, comparePriority, severityFor, severityTone, compatInfo, machineStatusInfo, toneVar, KANBAN_COLUMNS, MISSION_STATUSES, mergePages } from '../src/lib/status.ts';
 import { availableActions } from '../src/lib/actions.ts';
 
 test('estados de misión: etiqueta en español, tono e icono (nunca solo color)', () => {
@@ -45,4 +45,12 @@ test('acciones disponibles según estado de la misión', () => {
   assert.deepEqual(availableActions({ status: 'briefing', approvalPending: false, plan: { status: 'rejected' } }), ['stop']);
   assert.deepEqual(availableActions({ status: 'review', approvalPending: false }), ['accept', 'changes', 'rerun']);
   assert.deepEqual(availableActions({ status: 'cancelled', approvalPending: false }), []);
+});
+
+test('paginación por cursor: mergePages acumula páginas sin repetir', () => {
+  const a = [{ id: '1' }, { id: '2' }];
+  const b = [{ id: '2' }, { id: '3' }];
+  assert.deepEqual(mergePages(a, b).map((x) => x.id), ['1', '2', '3']);
+  assert.deepEqual(mergePages(a, []).length, 2);
+  assert.deepEqual(mergePages(), []);
 });

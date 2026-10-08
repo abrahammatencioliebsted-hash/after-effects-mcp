@@ -2,12 +2,14 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './Icon.tsx';
 import { Button } from './ui.tsx';
 import { useApp } from '../state/AppContext.tsx';
-import { go, useDebounced, useResource } from '../state/hooks.ts';
+import { go, useDebounced, useMediaQuery, useResource } from '../state/hooks.ts';
 import { api } from '../lib/api.ts';
 import { rankSearch } from '../lib/search.ts';
 import type { SearchItem } from '../lib/search.ts';
 import type { MissionSummary } from '@mc/contracts';
 import { missionStatusInfo } from '../lib/status.ts';
+import { isDarkScheme } from '../lib/theme.ts';
+import { formatTime } from '../lib/format.ts';
 
 export interface NavItem { id: string; label: string; icon: string; hint: string; group: number }
 
@@ -141,7 +143,8 @@ function SearchBox() {
 export function Header() {
   const app = useApp();
   const demo = app.mock || app.health.data?.bff.mode === 'demo';
-  const dark = document.documentElement.getAttribute('data-scheme') !== 'light';
+  const prefersLight = useMediaQuery('(prefers-color-scheme: light)');
+  const dark = isDarkScheme(app.local, prefersLight);
   const streamTxt = app.stream === 'open' ? 'En vivo' : app.stream === 'mock' ? 'Sin flujo (simulado)' : app.stream === 'reconnecting' ? 'Reconectando…' : 'Conectando…';
   return (
     <header className="header">
@@ -179,7 +182,10 @@ export function Banners() {
         <div className="banner degraded" role="alert">
           <Icon name="alert" size={18} />
           <b>SIN CONEXIÓN CON EL BFF</b>
-          <span className="t2">No se alcanza <code>/api/mc</code>. Arranca el BFF en el puerto 3300 o usa <code>?mock=1</code>.</span>
+          <span className="t2">
+            No se alcanza <code>/api/mc</code>. Arranca el BFF en el puerto 3300 o usa <code>?mock=1</code>.
+            {app.degraded.staleSince !== undefined && <> Los datos en pantalla son los últimos conocidos ({formatTime(new Date(app.degraded.staleSince).toISOString(), undefined, false)}).</>}
+          </span>
           <Button size="sm" className="right" icon="refresh" onClick={app.health.reload}>Reintentar</Button>
         </div>
       )}

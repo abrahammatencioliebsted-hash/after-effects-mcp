@@ -148,82 +148,84 @@ export function MissionDrawer({ id, tab: tabParam }: { id: string; tab?: string 
             { id: 'replay', label: 'Replay', icon: 'history' },
           ]} />
 
-          {tab === 'resumen' && (
-            <div className="stack" style={{ gap: 20 }}>
-              <section><h3 style={{ fontSize: '.95rem', marginBottom: 6 }}>Objetivo</h3><p className="t2" style={{ whiteSpace: 'pre-wrap' }}>{m.objective}</p></section>
-              <section aria-label="Plan">
-                <h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Plan {m.plan && <Badge tone={m.plan.status === 'approved' ? 'ok' : m.plan.status === 'rejected' ? 'crit' : 'warn'}>{m.plan.status === 'approved' ? 'Aprobado' : m.plan.status === 'rejected' ? 'Rechazado' : 'Pendiente de aprobación'}</Badge>}</h3>
-                {m.plan ? (
-                  <div className="card tight" style={{ background: 'var(--panel-2)' }}>
-                    <p className="t2" style={{ marginBottom: 12 }}>{m.plan.rationale}</p>
-                    <ol style={{ margin: 0, paddingLeft: 20 }} className="stack">
-                      {m.plan.steps.map((s) => (
-                        <li key={s.order}><strong>{s.title}</strong><div className="muted" style={{ fontSize: '.82rem' }}>{[s.agentName, s.machineId, s.minutes ? `${s.minutes} min` : ''].filter(Boolean).join(' · ')}</div></li>
+          <div role="tabpanel" id={`panel-${tab}`} aria-labelledby={`tab-${tab}`} tabIndex={0}>
+            {tab === 'resumen' && (
+              <div className="stack" style={{ gap: 20 }}>
+                <section><h3 style={{ fontSize: '.95rem', marginBottom: 6 }}>Objetivo</h3><p className="t2" style={{ whiteSpace: 'pre-wrap' }}>{m.objective}</p></section>
+                <section aria-label="Plan">
+                  <h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Plan {m.plan && <Badge tone={m.plan.status === 'approved' ? 'ok' : m.plan.status === 'rejected' ? 'crit' : 'warn'}>{m.plan.status === 'approved' ? 'Aprobado' : m.plan.status === 'rejected' ? 'Rechazado' : 'Pendiente de aprobación'}</Badge>}</h3>
+                  {m.plan ? (
+                    <div className="card tight" style={{ background: 'var(--panel-2)' }}>
+                      <p className="t2" style={{ marginBottom: 12 }}>{m.plan.rationale}</p>
+                      <ol style={{ margin: 0, paddingLeft: 20 }} className="stack">
+                        {m.plan.steps.map((s) => (
+                          <li key={s.order}><strong>{s.title}</strong><div className="muted" style={{ fontSize: '.82rem' }}>{[s.agentName, s.machineId, s.minutes ? `${s.minutes} min` : ''].filter(Boolean).join(' · ')}</div></li>
+                        ))}
+                      </ol>
+                      <div className="muted" style={{ fontSize: '.78rem', marginTop: 12 }}>Propuesto por {m.plan.proposedBy.name} ({m.plan.proposedBy.type === 'agent' ? 'agente' : 'reglas del catálogo'}) · {formatDateTime(m.plan.proposedAt)}</div>
+                    </div>
+                  ) : <p className="muted">Sin plan: la misión fue cancelada antes de proponerlo.</p>}
+                </section>
+                {m.result && (
+                  <section aria-label="Resultado"><h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Resultado de {m.result.agentName}</h3><div className="card tight" style={{ background: 'var(--panel-2)' }}><Markdown source={m.result.body} /></div></section>
+                )}
+                <section>
+                  <h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Datos</h3>
+                  <KV items={[
+                    ['Responsable', m.assigneeName ?? 'Sin asignar'],
+                    ['Equipo físico', m.machineId ?? '—'],
+                    ['Plataforma · modelo', `${platformLabel(m.platform)} · ${m.modelLabel ?? 'sin modelo'}`],
+                    ['Creada', formatDateTime(m.createdAt)],
+                    ['Fecha objetivo', m.targetDate ? formatDate(m.targetDate) : 'Sin fecha'],
+                    ['Duración de runs', formatDuration(m.durationSec)],
+                    ['Tokens', `${formatTokens(totalTokens(m.tokens))} (${formatTokens(m.tokens.input)} entrada · ${formatTokens(m.tokens.output)} salida)`],
+                    ['Coste', `${formatCents(m.tokens.estimatedCents)} · ${costStatusLabel(m.tokens.costStatus)}`],
+                    ['Límites', `${m.limits.maxMinutes} min · ${m.limits.maxSteps} pasos · informe ${m.limits.reportLength === 'short' ? 'corto' : m.limits.reportLength === 'long' ? 'largo' : 'medio'}`],
+                    ['Al terminar', m.finish === 'review_first' ? 'Revisión humana' : 'Entrega directa'],
+                    ['Subtareas', m.childCount ? `${m.childDoneCount} de ${m.childCount} hechas` : 'Ninguna'],
+                  ]} />
+                </section>
+                {m.documents.length > 0 && (
+                  <section><h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Documentos</h3>
+                    <div className="stack" style={{ gap: 8 }}>{m.documents.map((d) => <a key={d.id} href={`#/docs/${encodeURIComponent(d.id)}`} className="chip"><Icon name="doc" size={14} /> {d.title}</a>)}</div></section>
+                )}
+                <section><h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Procedencia</h3><ProvenanceList notes={m.provenance} /></section>
+              </div>
+            )}
+
+            {tab === 'mensajes' && (
+              <div className="stack">
+                <div className="row between wrap">
+                  <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={onlyMsgs} onChange={(e) => setOnlyMsgs(e.target.checked)} /> Solo mensajes entre agentes</label>
+                  <span className="muted" style={{ fontSize: '.78rem' }}>Horas en tu zona ({timeZoneLabel(new Date())}) · se actualiza en vivo</span>
+                </div>
+                <Timeline events={msgs} live />
+              </div>
+            )}
+
+            {tab === 'runs' && (
+              m.runs.length === 0 ? <Empty icon="activity" title="Aún no hay runs">Cuando apruebes el plan, cada ejecución aparecerá aquí.</Empty> : (
+                <div className="tbl-wrap">
+                  <table className="tbl">
+                    <thead><tr><th>Agente</th><th>Estado</th><th>Origen</th><th className="num">Duración</th><th className="num">Tokens</th></tr></thead>
+                    <tbody>
+                      {m.runs.map((r) => (
+                        <tr key={r.id}>
+                          <td><strong>{r.agentName}</strong><div className="muted" style={{ fontSize: '.76rem' }}>{r.modelLabel ?? r.adapterType ?? ''}</div></td>
+                          <td><Badge info={runStatusInfo(r.status)} />{r.error && <div className="muted" style={{ fontSize: '.76rem', marginTop: 4, color: 'var(--crit)' }}>{r.error}</div>}</td>
+                          <td className="muted">{r.source === 'assignment' ? 'Asignación' : r.source === 'on_demand' ? 'Bajo demanda' : r.source === 'automation' ? 'Automatización' : r.source === 'timer' ? 'Temporizador' : '—'}</td>
+                          <td className="num">{formatDuration(r.durationSec)}</td>
+                          <td className="num">{formatTokens(totalTokens(r.tokens))}<div className="muted" style={{ fontSize: '.72rem' }}>{formatCents(r.tokens.estimatedCents)}</div></td>
+                        </tr>
                       ))}
-                    </ol>
-                    <div className="muted" style={{ fontSize: '.78rem', marginTop: 12 }}>Propuesto por {m.plan.proposedBy.name} ({m.plan.proposedBy.type === 'agent' ? 'agente' : 'reglas del catálogo'}) · {formatDateTime(m.plan.proposedAt)}</div>
-                  </div>
-                ) : <p className="muted">Sin plan: la misión fue cancelada antes de proponerlo.</p>}
-              </section>
-              {m.result && (
-                <section aria-label="Resultado"><h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Resultado de {m.result.agentName}</h3><div className="card tight" style={{ background: 'var(--panel-2)' }}><Markdown source={m.result.body} /></div></section>
-              )}
-              <section>
-                <h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Datos</h3>
-                <KV items={[
-                  ['Responsable', m.assigneeName ?? 'Sin asignar'],
-                  ['Equipo físico', m.machineId ?? '—'],
-                  ['Plataforma · modelo', `${platformLabel(m.platform)} · ${m.modelLabel ?? 'sin modelo'}`],
-                  ['Creada', formatDateTime(m.createdAt)],
-                  ['Fecha objetivo', m.targetDate ? formatDate(m.targetDate) : 'Sin fecha'],
-                  ['Duración de runs', formatDuration(m.durationSec)],
-                  ['Tokens', `${formatTokens(totalTokens(m.tokens))} (${formatTokens(m.tokens.input)} entrada · ${formatTokens(m.tokens.output)} salida)`],
-                  ['Coste', `${formatCents(m.tokens.estimatedCents)} · ${costStatusLabel(m.tokens.costStatus)}`],
-                  ['Límites', `${m.limits.maxMinutes} min · ${m.limits.maxSteps} pasos · informe ${m.limits.reportLength === 'short' ? 'corto' : m.limits.reportLength === 'long' ? 'largo' : 'medio'}`],
-                  ['Al terminar', m.finish === 'review_first' ? 'Revisión humana' : 'Entrega directa'],
-                  ['Subtareas', m.childCount ? `${m.childDoneCount} de ${m.childCount} hechas` : 'Ninguna'],
-                ]} />
-              </section>
-              {m.documents.length > 0 && (
-                <section><h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Documentos</h3>
-                  <div className="stack" style={{ gap: 8 }}>{m.documents.map((d) => <a key={d.id} href={`#/docs/${encodeURIComponent(d.id)}`} className="chip"><Icon name="doc" size={14} /> {d.title}</a>)}</div></section>
-              )}
-              <section><h3 style={{ fontSize: '.95rem', marginBottom: 8 }}>Procedencia</h3><ProvenanceList notes={m.provenance} /></section>
-            </div>
-          )}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            )}
 
-          {tab === 'mensajes' && (
-            <div className="stack">
-              <div className="row between wrap">
-                <label className="row" style={{ gap: 8 }}><input type="checkbox" checked={onlyMsgs} onChange={(e) => setOnlyMsgs(e.target.checked)} /> Solo mensajes entre agentes</label>
-                <span className="muted" style={{ fontSize: '.78rem' }}>Horas en tu zona ({timeZoneLabel(new Date())}) · se actualiza en vivo</span>
-              </div>
-              <Timeline events={msgs} live />
-            </div>
-          )}
-
-          {tab === 'runs' && (
-            m.runs.length === 0 ? <Empty icon="activity" title="Aún no hay runs">Cuando apruebes el plan, cada ejecución aparecerá aquí.</Empty> : (
-              <div className="tbl-wrap">
-                <table className="tbl">
-                  <thead><tr><th>Agente</th><th>Estado</th><th>Origen</th><th className="num">Duración</th><th className="num">Tokens</th></tr></thead>
-                  <tbody>
-                    {m.runs.map((r) => (
-                      <tr key={r.id}>
-                        <td><strong>{r.agentName}</strong><div className="muted" style={{ fontSize: '.76rem' }}>{r.modelLabel ?? r.adapterType ?? ''}</div></td>
-                        <td><Badge info={runStatusInfo(r.status)} />{r.error && <div className="muted" style={{ fontSize: '.76rem', marginTop: 4, color: 'var(--crit)' }}>{r.error}</div>}</td>
-                        <td className="muted">{r.source === 'assignment' ? 'Asignación' : r.source === 'on_demand' ? 'Bajo demanda' : r.source === 'automation' ? 'Automatización' : r.source === 'timer' ? 'Temporizador' : '—'}</td>
-                        <td className="num">{formatDuration(r.durationSec)}</td>
-                        <td className="num">{formatTokens(totalTokens(r.tokens))}<div className="muted" style={{ fontSize: '.72rem' }}>{formatCents(r.tokens.estimatedCents)}</div></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
-          )}
-
-          {tab === 'replay' && <ReplayPanel id={m.id} />}
+            {tab === 'replay' && <ReplayPanel id={m.id} />}
+          </div>
         </div>
       )}
       <ConfirmDialog

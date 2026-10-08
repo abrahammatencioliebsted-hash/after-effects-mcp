@@ -22,7 +22,13 @@ export const BLANK: Draft = {
   maxMinutes: 60, maxSteps: 3, reportLength: 'medium', finish: 'review_first',
 };
 
-export function validateStep(step: number, d: Draft): Record<string, string> {
+/** Datos externos de los que depende la validación del asistente. */
+export interface StepContext {
+  /** Modo «reglas»: hay catálogo cargado y con capacidades que elegir. */
+  catalogReady: boolean;
+}
+
+export function validateStep(step: number, d: Draft, ctx: StepContext = { catalogReady: true }): Record<string, string> {
   const e: Record<string, string> = {};
   if (step === 0) {
     if (!d.title.trim()) e.title = 'Escribe un título.';
@@ -31,6 +37,7 @@ export function validateStep(step: number, d: Draft): Record<string, string> {
   }
   if (step === 1) {
     if (d.teamMode === 'manual' && d.agentIds.length === 0) e.team = 'Elige al menos un agente.';
+    if (d.teamMode === 'rules' && !ctx.catalogReady) e.team = 'El catálogo de capacidades no está disponible: reintenta la carga o cambia de modo de equipo.';
     if (d.teamMode === 'boss' && !d.bossAgentId) e.team = 'No hay agente jefe definido: elígelo en Ajustes o usa equipo manual.';
   }
   if (step === 2) {
@@ -40,3 +47,21 @@ export function validateStep(step: number, d: Draft): Record<string, string> {
   return e;
 }
 
+
+/** Clave de idempotencia ligada al cuerpo enviado: mismo cuerpo = misma clave (reintento seguro); cuerpo distinto = clave nueva. */
+export interface IdemState { key: string; fingerprint: string }
+
+export function resolveIdempotencyKey(prev: IdemState | null, fingerprint: string, makeKey: () => string): IdemState {
+  return prev && prev.fingerprint === fingerprint ? prev : { key: makeKey(), fingerprint };
+}
+
+/**
+ * El BFF responde 409 con `code: 'conflict'` y `details.code: 'idempotency_key_conflict'` cuando la clave ya se usó con otro cuerpo
+ * (también se acepta el código plano por si el contrato lo promueve).
+ */
+export function isIdempotencyConflict(err: unknown): boolean {
+  const e = err as { status?: unknown; code?: unknown; details?: unknown } | null;
+  if (!e || typeof e !== 'object') return false;
+  const inner = (e.details as { code?: unknown } | undefined)?.code;
+  return e.code === 'idempotency_key_conflict' || (e.status === 409 && inner === 'idempotency_key_conflict');
+}

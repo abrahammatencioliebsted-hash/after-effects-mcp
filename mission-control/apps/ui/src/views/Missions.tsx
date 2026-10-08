@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type { MissionStatus, MissionSummary, Priority } from '@mc/contracts';
 import { api } from '../lib/api.ts';
 import { Badge, Button, Card, Empty, ErrorState, Loading, PageHead, Segmented } from '../components/ui.tsx';
@@ -10,7 +10,7 @@ import { useApp } from '../state/AppContext.tsx';
 import { go, useDebounced, useResource } from '../state/hooks.ts';
 import type { Route } from '../lib/router.ts';
 import { formatDuration, formatTokens, relativeTime, totalTokens, plural } from '../lib/format.ts';
-import { KANBAN_COLUMNS, comparePriority, missionStatusInfo, priorityInfo, scopeLabel } from '../lib/status.ts';
+import { KANBAN_COLUMNS, comparePriority, mergePages, missionStatusInfo, priorityInfo, scopeLabel } from '../lib/status.ts';
 
 function MissionCard({ m }: { m: MissionSummary }) {
   const pr = priorityInfo(m.priority);
@@ -82,19 +82,41 @@ export function MissionsView({ route }: { route: Route }) {
   const [prio, setPrio] = useState<'all' | Priority>('all');
   const [onlyPending, setOnlyPending] = useState(route.query.filter === 'aprobacion');
   const [days, setDays] = useState<'7' | '14' | '30'>('14');
-  const list = useResource(() => api.missions({ ...(dq ? { q: dq } : {}), ...(scope !== 'all' ? { scope } : {}), limit: 200 }), [dq, scope, app.live.missions]);
+  const PAGE = 200;
+  const filters = { ...(dq ? { q: dq } : {}), ...(scope !== 'all' ? { scope } : {}) };
+  const list = useResource(() => api.missions({ ...filters, limit: PAGE }), [dq, scope, app.live.missions]);
   const ov = useResource(() => api.overview(Number(days)), [days, app.live.missions]);
+  // Páginas siguientes (cursor): se descartan cuando la primera página se recarga (filtros o evento en vivo).
+  const [more, setMore] = useState<{ items: MissionSummary[]; started: boolean; nextCursor?: string | undefined }>({ items: [], started: false });
+  const [loadingMore, setLoadingMore] = useState(false);
+  useEffect(() => { setMore({ items: [], started: false }); }, [list.data]);
+  const nextCursor = more.started ? more.nextCursor : list.data?.nextCursor;
+  const loaded = useMemo(() => mergePages(list.data?.items ?? [], more.items), [list.data, more.items]);
+  const loadMore = async () => {
+    if (!nextCursor) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.missions({ ...filters, limit: PAGE, cursor: nextCursor });
+      setMore((m) => ({ items: [...m.items, ...page.items], started: true, nextCursor: page.nextCursor }));
+    } catch (e) {
+      app.toast('crit', e instanceof Error ? e.message : 'No se pudieron cargar más misiones.');
+    } finally { setLoadingMore(false); }
+  };
   const items = useMemo(() => {
-    let r = list.data?.items ?? [];
+    let r = loaded;
     if (prio !== 'all') r = r.filter((m) => m.priority === prio);
     if (onlyPending) r = r.filter((m) => m.approvalPending);
     return r;
-  }, [list.data, prio, onlyPending]);
+  }, [loaded, prio, onlyPending]);
 
   const byCol = (s: MissionStatus) => items.filter((m) => m.status === s).sort((a, b) => comparePriority(a.priority, b.priority) || b.createdAt.localeCompare(a.createdAt));
   const others = items.filter((m) => m.status === 'blocked' || m.status === 'cancelled');
-  const pendingCount = (list.data?.items ?? []).filter((m) => m.approvalPending).length;
-  const totalDur = (list.data?.items ?? []).reduce((a, m) => a + m.durationSec, 0);
+  // Cifras globales del overview cuando existen; si no, las de las misiones cargadas (se indica en la tarjeta).
+  const partial = nextCursor !== undefined;
+  const pendingCount = ov.data?.pendingApprovals ?? loaded.filter((m) => m.approvalPending).length;
+  const ongoingCount = ov.data?.missions.byStatus.ongoing ?? loaded.filter((m) => m.status === 'ongoing').length;
+  const totalDur = loaded.reduce((a, m) => a + m.durationSec, 0);
+  const ofLoaded = partial ? ` (de las ${loaded.length} cargadas)` : '';
   const active = app.agents.data?.filter((a) => a.state === 'working').length ?? 0;
   const totalAgents = app.agents.data?.length ?? 0;
   const log = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -109,9 +131,9 @@ export function MissionsView({ route }: { route: Route }) {
 
       <div className="grid c4" style={{ marginBottom: 16 }}>
         <Card tight><div className="stat"><span className="v" style={{ color: pendingCount ? 'var(--accent)' : undefined }}>{pendingCount}</span><span className="l"><Icon name="clock" size={13} /> Esperan tu aprobación</span></div></Card>
-        <Card tight><div className="stat"><span className="v">{formatDuration(totalDur)}</span><span className="l"><Icon name="activity" size={13} /> Tiempo total de agentes</span></div></Card>
+        <Card tight><div className="stat"><span className="v">{formatDuration(totalDur)}</span><span className="l"><Icon name="activity" size={13} /> Tiempo total de agentes{ofLoaded}</span></div></Card>
         <Card tight><div className="stat"><span className="v">{active}<span className="muted" style={{ fontSize: '1rem' }}> / {totalAgents}</span></span><span className="l"><Icon name="user" size={13} /> Agentes con misión activa</span></div></Card>
-        <Card tight><div className="stat"><span className="v">{(list.data?.items ?? []).filter((m) => m.status === 'ongoing').length}</span><span className="l"><Icon name="target" size={13} /> Misiones en curso</span></div></Card>
+        <Card tight><div className="stat"><span className="v">{ongoingCount}</span><span className="l"><Icon name="target" size={13} /> Misiones en curso</span></div></Card>
       </div>
 
       <Card className="" title="Distribución de tareas en el tiempo" sub="Runs por día en la ventana elegida" right={<Segmented<'7' | '14' | '30'> label="Ventana" value={days} onChange={setDays} options={[{ value: '7', label: '7 d' }, { value: '14', label: '14 d' }, { value: '30', label: '30 d' }]} />}>
@@ -163,6 +185,12 @@ export function MissionsView({ route }: { route: Route }) {
                 </details>
               )}
               {items.length === 0 && <p className="muted" style={{ marginTop: 12 }}>Ninguna misión coincide con los filtros.</p>}
+              {partial && (
+                <div className="row wrap" style={{ gap: 12, marginTop: 16 }} role="status">
+                  <span className="muted">Mostrando {loaded.length} de más: hay misiones anteriores sin cargar.</span>
+                  <Button icon="chevron-down" loading={loadingMore} onClick={loadMore}>Cargar más</Button>
+                </div>
+              )}
 
               <Card className="" title="Registro de misiones" sub={`${log.length} ${plural(log.length, 'misión', 'misiones')} · despliega una fila para ver el detalle o reproducirla`} flush>
                 <div className="tbl-wrap" style={{ padding: '0 8px 8px' }}>

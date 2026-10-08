@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sanitizeLocalSettings, DEFAULT_SETTINGS, loadLocalSettings, saveLocalSettings, themeAttributes, contrastRatio, readableOn, checkCustomTheme, resolveScheme, exportLocalSettings, importLocalSettings, STORAGE_KEY } from '../src/lib/theme.ts';
+import { sanitizeLocalSettings, DEFAULT_SETTINGS, loadLocalSettings, saveLocalSettings, themeAttributes, isDarkScheme, contrastRatio, readableOn, checkCustomTheme, resolveScheme, exportLocalSettings, importLocalSettings, STORAGE_KEY } from '../src/lib/theme.ts';
 
 test('valores por defecto: ámbar oscuro, riel completo, tipografía del sistema', () => {
   assert.equal(DEFAULT_SETTINGS.theme, 'ambar');
@@ -61,4 +61,11 @@ test('exportar e importar ajustes locales', () => {
   assert.equal(importLocalSettings(txt).theme, 'propio');
   assert.equal(importLocalSettings(JSON.stringify({ theme: 'azul' })).theme, 'azul');
   assert.throws(() => importLocalSettings('no es json'));
+});
+
+test('isDarkScheme deriva del estado y de la preferencia del sistema, no del DOM', () => {
+  assert.equal(isDarkScheme({ ...DEFAULT_SETTINGS, scheme: 'dark' }, true), true);
+  assert.equal(isDarkScheme({ ...DEFAULT_SETTINGS, scheme: 'light' }, false), false);
+  assert.equal(isDarkScheme({ ...DEFAULT_SETTINGS, scheme: 'auto' }, true), false);
+  assert.equal(isDarkScheme({ ...DEFAULT_SETTINGS, scheme: 'auto' }, false), true);
 });

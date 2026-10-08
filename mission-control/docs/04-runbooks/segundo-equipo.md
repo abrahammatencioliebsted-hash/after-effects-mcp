@@ -24,6 +24,8 @@ Claves: **[C]** confirmado por ti · **[H]** comprobado en el entorno Cloud (Lin
 
 Tres reglas de URL: `apiBaseUrl` = la URL de Hermes **que alcanza el servidor de Paperclip**; `paperclipApiUrl` = la URL de Paperclip **que alcanza Hermes**; y un `apiBaseUrl` HTTP que no sea loopback se **deniega** (HTTPS o interruptor inseguro solo de prueba).
 
+> **En el BFF de Mission Control (equipo A):** el node-agent de B anuncia su Hermes como `http://127.0.0.1:8642` (su propio loopback). Desde A eso sería otra máquina, así que el BFF **no** lo usa para crear el agente: exige `MC_HERMES_URL_<MACHINEID>` (p. ej. `MC_HERMES_URL_WIN_LAPTOP_1=https://b.tail1234.ts.net`) y responde 409 si falta. Solo el equipo `MC_LOCAL_MACHINE_ID` (por defecto `win-principal`) puede anunciar loopback. Si abres el panel por un nombre que no sea `localhost`, una IP o `*.ts.net`, añádelo a `MC_ALLOWED_HOSTS`. Detalle: `docs/08-contrato-bff.md`, reglas 8–10.
+
 ## A. Plano de control: pasar Paperclip a `authenticated` + tailnet
 
 > Mientras Paperclip esté en `local_trusted` + loopback **ningún otro equipo puede alcanzarlo** (`DEPLOYMENT-MODES.md:65-69`). Este paso es el que abre la puerta; hazlo después de la copia de seguridad completa (`actualizar-y-restaurar.md` §3).

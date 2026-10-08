@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FinishPolicy, MissionCreateRequest, Priority, ReportLength, TeamMode } from '@mc/contracts';
-import { BLANK, validateStep } from '../lib/wizard.ts';
-import type { Draft } from '../lib/wizard.ts';
-import { Button, Field, Modal, Segmented } from './ui.tsx';
+import { BLANK, isIdempotencyConflict, resolveIdempotencyKey, validateStep } from '../lib/wizard.ts';
+import type { Draft, IdemState } from '../lib/wizard.ts';
+import { Button, Empty, ErrorState, Field, Loading, Modal, Segmented } from './ui.tsx';
 import { Icon } from './Icon.tsx';
 import { api } from '../lib/api.ts';
 import { localInputToIso, plural } from '../lib/format.ts';
@@ -12,6 +12,8 @@ import { go, useResource } from '../state/hooks.ts';
 
 const STEPS = ['Misión', 'Equipo', 'Límites', 'Revisar y lanzar'] as const;
 
+const newKey = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `k-${Date.now()}-${Math.random()}`);
+
 export function MissionWizard() {
   const app = useApp();
   const { wizard } = app;
@@ -20,15 +22,21 @@ export function MissionWizard() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const idemKey = useRef<string>('');
+  const [conflict, setConflict] = useState(false);
+  // Clave ligada al cuerpo del último intento: reintentar lo mismo reutiliza la clave; si el borrador cambia, se genera otra.
+  const idem = useRef<IdemState | null>(null);
   const catalog = useResource(() => api.catalog(), [], wizard.open && d.teamMode === 'rules');
+  const catalogReady = (catalog.data?.length ?? 0) > 0;
+  const ctx = { catalogReady };
+  const blockedByCatalog = step === 1 && d.teamMode === 'rules' && !catalogReady;
 
   useEffect(() => {
     if (!wizard.open) return;
-    idemKey.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `k-${Date.now()}-${Math.random()}`;
+    idem.current = null;
     setStep(0);
     setErrors({});
     setSubmitError(null);
+    setConflict(false);
     setD({
       ...BLANK,
       title: wizard.prefill?.title ?? '',
@@ -43,18 +51,19 @@ export function MissionWizard() {
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
 
   const next = () => {
-    const e = validateStep(step, d);
+    const e = validateStep(step, d, ctx);
     setErrors(e);
     if (Object.keys(e).length === 0) setStep((s) => Math.min(STEPS.length - 1, s + 1));
   };
 
-  const submit = async () => {
+  const submit = async (freshKey = false) => {
     for (let s = 0; s < 3; s++) {
-      const e = validateStep(s, d);
+      const e = validateStep(s, d, ctx);
       if (Object.keys(e).length) { setErrors(e); setStep(s); return; }
     }
     setBusy(true);
     setSubmitError(null);
+    setConflict(false);
     const target = localInputToIso(d.targetDate);
     const body: MissionCreateRequest = {
       title: d.title.trim(),
@@ -68,13 +77,16 @@ export function MissionWizard() {
       scope: d.scope,
       ...(wizard.prefill?.ideaId ? { ideaId: wizard.prefill.ideaId } : {}),
     };
+    if (freshKey) idem.current = null;
+    idem.current = resolveIdempotencyKey(idem.current, JSON.stringify(body), newKey);
     try {
-      const created = await api.createMission(body, idemKey.current);
+      const created = await api.createMission(body, idem.current.key);
       app.toast('ok', `Misión ${created.identifier} creada${created.approvalPending ? ': espera tu aprobación del plan' : ''}.`);
       app.closeWizard();
       go('misiones', created.id);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'No se pudo crear la misión.');
+      if (isIdempotencyConflict(err)) setConflict(true);
+      else setSubmitError(err instanceof Error ? err.message : 'No se pudo crear la misión.');
     } finally {
       setBusy(false);
     }
@@ -97,7 +109,9 @@ export function MissionWizard() {
           {step > 0 && <Button variant="ghost" icon="chevron-left" onClick={() => setStep((s) => s - 1)} disabled={busy}>Atrás</Button>}
           <span className="grow" />
           <Button variant="ghost" onClick={app.closeWizard} disabled={busy}>Cancelar</Button>
-          {step < STEPS.length - 1 ? <Button variant="primary" onClick={next}>Continuar</Button> : <Button variant="primary" icon="rocket" loading={busy} onClick={submit}>Lanzar misión</Button>}
+          {step < STEPS.length - 1
+            ? <Button variant="primary" onClick={next} disabled={blockedByCatalog} {...(blockedByCatalog ? { title: 'Hace falta el catálogo o cambiar de modo de equipo' } : {})}>Continuar</Button>
+            : <Button variant="primary" icon="rocket" loading={busy} onClick={() => submit()}>Lanzar misión</Button>}
         </>
       }
     >
@@ -176,7 +190,11 @@ export function MissionWizard() {
           {d.teamMode === 'rules' && (
             <div className="field">
               <span className="lbl">Capacidades requeridas</span>
-              {catalog.loading ? <span className="muted">Cargando catálogo…</span> : (
+              {catalog.loading ? <Loading rows={2} label="Cargando el catálogo…" /> : catalog.error && !catalog.data ? (
+                <ErrorState error={catalog.error} onRetry={catalog.reload} what="el catálogo de capacidades" />
+              ) : catalog.data && catalog.data.length === 0 ? (
+                <Empty icon="layers" title="El catálogo está vacío">No hay capacidades que elegir: cambia a «El jefe elige» o «Equipo manual».</Empty>
+              ) : (
                 <div className="pick-grid" role="group" aria-label="Capacidades requeridas">
                   {(catalog.data ?? []).map((c) => (
                     <label key={c.id} className="pick">
@@ -235,6 +253,19 @@ export function MissionWizard() {
           </div>
           <p className="muted" style={{ fontSize: '.86rem' }}>Se creará la misión en Briefing con un plan propuesto. No empieza a trabajar hasta que apruebes el plan.</p>
           {submitError && <div className="state-error" role="alert"><Icon name="alert" size={20} /><div>{submitError}</div></div>}
+          {conflict && (
+            <div className="state-error" role="alert">
+              <Icon name="alert" size={20} />
+              <div className="grow">
+                <strong>La misión pudo crearse ya; revisa Misiones.</strong>
+                <div className="t2" style={{ fontSize: '.9rem', marginTop: 4 }}>El BFF recuerda este intento con otro contenido. Comprueba la lista antes de reintentar para no duplicarla.</div>
+                <div className="row wrap" style={{ gap: 8, marginTop: 12 }}>
+                  <Button size="sm" onClick={() => { app.closeWizard(); go('misiones'); }}>Ver Misiones</Button>
+                  <Button size="sm" icon="refresh" loading={busy} onClick={() => submit(true)}>Reintentar con clave nueva</Button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </Modal>

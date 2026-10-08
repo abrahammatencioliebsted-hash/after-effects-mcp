@@ -181,3 +181,11 @@ export function platformLabel(p: string | undefined): string {
 export function scopeLabel(s: string): string {
   return s === 'trabajo' ? 'Trabajo' : s === 'proyectos' ? 'Proyectos' : s === 'personal' ? 'Personal' : s;
 }
+
+/** Une páginas de una lista paginada por cursor sin repetir elementos (gana la primera aparición). */
+export function mergePages<T extends { id: string }>(...pages: T[][]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const page of pages) for (const it of page) if (!seen.has(it.id)) { seen.add(it.id); out.push(it); }
+  return out;
+}

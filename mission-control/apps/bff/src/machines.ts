@@ -1,6 +1,7 @@
 import type { MachineHeartbeat, MachineHealthSample, MachineHermesStatus, MachineId, MachineOs, MachineSummary, AllowedCommand } from '@mc/contracts';
 import type { Db } from './db.js';
 import { badRequest } from './errors.js';
+import { validateHermesBaseUrl } from './net.js';
 import { asRecord, iso } from './util.js';
 
 /** Los cuatro equipos del piloto (docs/03-arquitectura.md §2). */
@@ -53,11 +54,14 @@ export class MachineRegistry {
   private readonly now: () => number;
   private readonly lastStatus = new Map<string, MachineSummary['status']>();
 
+  private readonly allowedHosts: ReadonlySet<string>;
+
   constructor(
     private readonly db: Db,
-    opts: { now?: () => number } = {},
+    opts: { now?: () => number; allowedHosts?: Iterable<string> } = {},
   ) {
     this.now = opts.now ?? Date.now;
+    this.allowedHosts = new Set(opts.allowedHosts ?? []);
     const ins = db.prepare('INSERT OR IGNORE INTO machines(id, name, os, role) VALUES(?, ?, ?, ?)');
     for (const m of KNOWN_MACHINES) ins.run(m.id, m.name, m.os, m.role);
   }
@@ -93,8 +97,8 @@ export class MachineRegistry {
   }
 
   /** Valida y guarda un latido. Devuelve el equipo y el cambio de estado, si lo hubo. */
-  heartbeat(pathId: MachineId, body: unknown): { machine: StoredMachine; changed?: { from: MachineSummary['status']; to: MachineSummary['status'] } } {
-    const hb = validateHeartbeat(body);
+  heartbeat(pathId: MachineId, body: unknown, extraAllowedHosts?: Iterable<string>): { machine: StoredMachine; changed?: { from: MachineSummary['status']; to: MachineSummary['status'] } } {
+    const hb = validateHeartbeat(body, new Set([...this.allowedHosts, ...(extraAllowedHosts ?? [])]));
     if (hb.machineId !== pathId) throw badRequest(`machineId del cuerpo (${hb.machineId}) no coincide con la ruta (${pathId})`);
     const before = this.get(pathId);
     const prev = before ? this.statusOf(before) : 'unknown';
@@ -162,7 +166,7 @@ export class MachineRegistry {
   }
 }
 
-function validateHeartbeat(body: unknown): MachineHeartbeat {
+function validateHeartbeat(body: unknown, allowedHosts: ReadonlySet<string>): MachineHeartbeat {
   const b = asRecord(body);
   if (typeof b.machineId !== 'string' || !b.machineId) throw badRequest('machineId es obligatorio');
   if (typeof b.name !== 'string' || !b.name) throw badRequest('name es obligatorio');
@@ -174,9 +178,12 @@ function validateHeartbeat(body: unknown): MachineHeartbeat {
   }
   if (typeof h.at !== 'string') throw badRequest('health.at es obligatorio (ISO 8601)');
   const he = asRecord(b.hermes);
-  if (typeof he.installed !== 'boolean' || typeof asRecord(he.apiServer).reachable !== 'boolean') {
+  const api = asRecord(he.apiServer);
+  if (typeof he.installed !== 'boolean' || typeof api.reachable !== 'boolean') {
     throw badRequest('hermes.installed y hermes.apiServer.reachable son obligatorios');
   }
+  // La URL del latido se usa para sondear y como destino del adaptador: solo destinos locales/privados/tailnet.
+  if (api.baseUrl !== undefined) api.baseUrl = validateHermesBaseUrl(api.baseUrl, allowedHosts);
   if (!Array.isArray(b.allowedCommandIds) || !b.allowedCommandIds.every((x) => typeof x === 'string')) {
     throw badRequest('allowedCommandIds debe ser una lista de textos');
   }

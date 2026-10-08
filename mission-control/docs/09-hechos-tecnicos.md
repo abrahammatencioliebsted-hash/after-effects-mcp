@@ -62,6 +62,13 @@ Fecha: 2026-10-08, entorno Cloud Linux. Todo lo de aquí se observó en vivo **[
 
 Cuando el agente respondió sin cambiar el estado de la tarea, Paperclip lanzó dos runs `automation` ("reparación de disposición"), y a los 2/2 intentos escaló: actividad `issue.disposition_repair_escalated` {maxAttempts: 2, routingPolicy: "board_escalation_no_takeover_v1"}, tarea a `blocked`, comentario de sistema "unchanged_source_state_exhausted - Recovery owner: board".
 
+### Hallazgos de la revisión independiente (2026-10-08 09:1x–09:3x UTC, contra el Paperclip vivo)
+- `GET /companies/{c}/costs/by-agent` **ignora `period`** (`routes/costs.js:152-160` → `parseCostDateRange` solo lee `from`/`to`; `services/costs.js:232-237`): sin rango agrega todo el histórico; responde 200 con `?period=month`. El agente ya trae `spentMonthlyCents`.
+- `GET /issues/{id}/runs` devuelve `runId` (no `id`); los runs de la empresa (`/companies/{c}/heartbeat-runs`) incluyen `contextSnapshot.issueId`, por lo que sirven de respaldo si la primera ruta falla.
+- `/companies/{c}/secrets` solo expone `GET` y `POST` en este build: **no hay `DELETE`** de secretos por API.
+- `POST /issues` crea con `status: backlog` sin despertar al asignado (`routes/issues.js:258`); al pasar a `todo` despierta (`statusChangedFromBacklog`).
+- `POST /agents/{id}/wakeup` acepta `idempotencyKey` y liga el run a la issue (`wakeReason: mc_rerun`, comprobado en vivo).
+
 ## Hermes Agent (clon a28a5d03, 2026-10-07)
 
 - Python ≥ 3.11 pero el entorno gestionado por `uv` fija 3.14 (`uv sync --python 3.14`). El API server necesita `aiohttp` (extra de gateway).

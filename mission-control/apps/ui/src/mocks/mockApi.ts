@@ -180,7 +180,12 @@ export async function handleMock(method: string, path: string, query: Query | un
       if (scope) items = items.filter((m) => m.scope === scope);
       const q = str(query, 'q')?.toLowerCase();
       if (q) items = items.filter((m) => `${m.title} ${m.identifier} ${m.assigneeName ?? ''}`.toLowerCase().includes(q));
-      return { items: items.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, Number(str(query, 'limit') ?? 200)) };
+      // Paginación como el BFF: `cursor` opaco (aquí, el desplazamiento) y `nextCursor` si quedan más.
+      const sorted = items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      const offset = Math.max(0, Number(str(query, 'cursor') ?? 0) || 0);
+      const limit = Number(str(query, 'limit') ?? 200);
+      const page = sorted.slice(offset, offset + limit);
+      return offset + limit < sorted.length ? { items: page, nextCursor: String(offset + limit) } : { items: page };
     }
     case 'POST missions': {
       if (!id) {

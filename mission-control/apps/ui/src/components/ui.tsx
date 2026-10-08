@@ -101,13 +101,17 @@ export function Tabs<T extends string>({ value, onChange, tabs, label }: { value
     const dir = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!dir) return;
     const next = tabs[(i + dir + tabs.length) % tabs.length];
-    if (next) onChange(next.id);
+    if (next) {
+      onChange(next.id);
+      // El foco acompaña a la pestaña activa (patrón WAI-ARIA de tabs con activación automática).
+      document.getElementById(`tab-${next.id}`)?.focus();
+    }
     e.preventDefault();
   };
   return (
     <div className="tabs" role="tablist" aria-label={label} onKeyDown={onKey}>
       {tabs.map((t) => (
-        <button key={t.id} role="tab" type="button" id={`tab-${t.id}`} aria-selected={value === t.id} tabIndex={value === t.id ? 0 : -1} onClick={() => onChange(t.id)}>
+        <button key={t.id} role="tab" type="button" id={`tab-${t.id}`} aria-selected={value === t.id} aria-controls={value === t.id ? `panel-${t.id}` : undefined} tabIndex={value === t.id ? 0 : -1} onClick={() => onChange(t.id)}>
           {t.icon && <Icon name={t.icon} size={16} />}
           {t.label}
           {t.count !== undefined && <span className="chip" style={{ padding: '0 8px' }}>{t.count}</span>}

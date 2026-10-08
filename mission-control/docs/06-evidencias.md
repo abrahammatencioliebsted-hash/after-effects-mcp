@@ -77,7 +77,7 @@ Run manual adicional 08:12:05 (`POST /api/agents/{a}/heartbeat/invoke` → queue
 
 ## 2026-10-08 08:4x UTC — Paquetes construidos y probados en este entorno
 - `@mc/node-agent`: build, typecheck y 19/19 pruebas (node:test) en verde. `checkHermes` contra el Hermes real → apiServer.reachable true; CLI `hermes` no instalada en el contenedor (installed false). Windows/macOS: NO ejecutado (schtasks, launchd, PowerShell, rutas C:\).
-- `@mc/paperclip-client`: build y typecheck en verde; 16 pruebas unitarias; 15/15 pruebas en vivo contra Paperclip 127.0.0.1:3101 (health, adaptadores, agentes con secret_ref, MIS-1 done, runs ≥4, evento adapter.invoke, costes ≥32645 tokens, dashboard, budgets, secretos sin valor, 404/400 reales). Objetos de prueba creados con prefijo "[auto-test]" (MIS-3 cancelada, rutina archivada, secreto AUTO_TEST_SECRET_PCC).
+- `@mc/paperclip-client`: build y typecheck en verde; 16 pruebas unitarias; 15/15 pruebas en vivo contra Paperclip 127.0.0.1:3101 (health, adaptadores, agentes con secret_ref, MIS-1 done, runs ≥4, evento adapter.invoke, costes ≥32645 tokens, dashboard, budgets, secretos sin valor, 404/400 reales). Una versión anterior de la prueba creó MIS-3 (cancelada), una rutina (archivada) y el secreto `AUTO_TEST_SECRET_PCC` (este sin prefijo); la prueba actual (`live.test.mjs`) es solo lectura y no crea nada.
 - Hallazgo del cliente: `GET /companies/{c}/issues` pagina por `limit/offset` (sin cursor); `POST /routines/{id}/run` existe (422 sin asignado).
 - `@mc/catalog`: build, typecheck y 16/16 pruebas; `validate` sobre la semilla: 22 capacidades válidas, 0 errores, 0 avisos. Solo tres capacidades figuran como "probada" (hermes-api-server, paperclip-hermes-gateway, modelo-simulado-stub), todas con evidencia de este entorno Cloud; el resto "descubierta"/"pendiente".
 - `@mc/node-agent` (ajuste): confirmación obligatoria en los 5 comandos; latido con maxHeavyJobs/activeHeavyJobs/nodeAgentUrl; 20/20 pruebas.
@@ -119,15 +119,15 @@ Informe literal: docs/evidencias/restauracion-lab.md. Scripts: scripts/common/{b
 ## 2026-10-08 09:2x UTC — Batería completa del workspace (`pnpm -r test`, sin variables de entorno de laboratorio)
 | Paquete | Pruebas | Pasan | Fallan | Omitidas |
 | --- | --- | --- | --- | --- |
-| apps/bff | 39 | 39 | 0 | 0 |
+| apps/bff | 39 → **56** tras la revisión | 56 | 0 | 0 |
 | apps/node-agent | 20 | 20 | 0 | 0 |
-| apps/ui | 32 | 32 | 0 | 0 |
+| apps/ui | 32 → **44** tras la revisión | 44 | 0 | 0 |
 | packages/catalog | 16 | 16 | 0 | 0 |
 | packages/hermes-mock | 26 | 26 | 0 | 0 |
 | packages/paperclip-client | 31 | 16 | 0 | 15 (en vivo, requieren PAPERCLIP_URL; pasaron 15/15 cuando se ejecutaron) |
 | tests | 9 | 9 | 0 | 0 (los 8 escenarios de laboratorio requieren MC_PAPERCLIP_URL) |
-| **Total** | **173** | **158** | **0** | **15** |
-`pnpm -r typecheck` en verde en los 8 paquetes. Además, en vivo: cliente 15/15, BFF 6/6, `lab/e2e.mjs` 16/16, 8 escenarios de fallo registrados.
+| **Total** | **173 → 202** (09:4x UTC, tras la revisión) | **187** | **0** | **15** |
+`pnpm -r typecheck` en verde en los 8 paquetes. Además, en vivo: cliente 15/15, BFF 6/6, `lab/e2e.mjs` 16/16, 8 escenarios de fallo registrados. (La fila de 173/158 era la instantánea de las 09:2x; la de 202/187 es la batería final del hito.)
 
 ## 2026-10-08 09:08 UTC — Suite de fallos re-ejecutada (8/8 escenarios registrados, 599 s)
 - `pnpm --filter @mc/tests test:lab` → 8 pass / 0 fail. Escenario 7 (duplicados) corregido: dos `POST /agents/{id}/heartbeat/invoke` simultáneos crean **dos runs on_demand distintos** (dos POST al mock con Idempotency-Key distintas): Paperclip **no deduplica** invocaciones manuales ni liga el run a la issue → veredicto parcial; MC debe usar el wakeup con idempotencia o un candado propio.
@@ -136,3 +136,57 @@ Informe literal: docs/evidencias/restauracion-lab.md. Scripts: scripts/common/{b
 
 ## 2026-10-08 09:3x UTC — BFF tras las tres correcciones
 - `pnpm --filter @mc/bff test` con laboratorio → **47/47** (41 locales + 6 en vivo). `rerunMission` usa `POST /agents/{id}/wakeup` con idempotencyKey e issueId (ruta existente en el build vivo; comprobado sobre MIS-9 → run on_demand ligado a la issue) con candado de 60 s por misión; el resultado de una misión solo proviene de runs no fallidos; `timeoutSec` por defecto 300 s configurable en Ajustes.
+
+## 2026-10-08 09:1x–09:5x UTC — Revisión independiente y correcciones (hito 1)
+
+**Qué se hizo.** Seis revisores independientes (Fable 5.1 · Alto; dimensiones: seguridad, corrección del BFF, fiabilidad, UI, pruebas, reproducibilidad), cada uno con el código, el Paperclip vivo (127.0.0.1:3101) y un BFF propio en puerto efímero; después, verificación adversarial por hallazgo. Las correcciones se hicieron en un árbol de trabajo aislado (git worktree) para no alterar lo que los revisores leían, y se fusionaron al cerrar. La dimensión **reproducibilidad** no entregó informe antes del cierre.
+
+**Hallazgos entregados: 32** (6 altos, 10 medios, 16 bajos). Corregidos: 30. Documentados como límite: 2 (F7 secretos de prueba acumulados; UI-03 residual: eventos perdidos antes de la primera conexión SSE).
+
+| Id | Sev. | Hallazgo (resumen) | Corrección | Prueba |
+| --- | --- | --- | --- | --- |
+| SEC-1 | alta | Sin defensa CSRF/Host: una web ajena podía ejecutar comandos permitidos vía el relé del BFF (probado por el revisor: 200 con `text/plain` + `Origin` ajeno; `Host: evil.example` → 200) | `Host` conocido obligatorio (loopback, IP literal, `*.ts.net`, `MC_ALLOWED_HOSTS`) → 403; `Origin`/`Sec-Fetch-Site` ajenos en mutaciones → 403; cuerpo no vacío sin `application/json` → 415 | `hardening.test.mjs` (3 pruebas) + servidor real abajo |
+| SEC-2 | alta | `hermes.apiServer.baseUrl` del latido sin validar: SSRF ciego desde `/health` (fetch a 169.254.169.254) y exfiltración de la `API_SERVER_KEY` al crear el agente con ese `apiBaseUrl` | Lista de destinos permitidos (loopback, RFC 1918, 100.64/10, ULA, `*.ts.net`, `MC_ALLOWED_HOSTS`); sin credenciales ni query → 400; `/health` solo sondea URLs válidas | `hardening.test.mjs` (latido) + servidor real |
+| SEC-3 | media | El BFF prefería el loopback anunciado por un equipo remoto a `MC_HERMES_URL_<ID>` → agente apuntando al Hermes equivocado con la clave del otro equipo | La URL del operador manda; loopback de un equipo ≠ `MC_LOCAL_MACHINE_ID` → 409 con instrucción | `hardening.test.mjs` (crear agente) |
+| SEC-4 | baja | Cuerpo sin límite (64 MB bufferizados, RSS +392 MB) | `bodyLimit` 2 MiB → 413 | prueba + servidor real |
+| BFF-01 | media | `costs/by-agent?period=month` ignorado por Paperclip (histórico completo) y pisaba `spentMonthlyCents` | `from`/`to` del mes UTC; el valor del agente manda | `hardening.test.mjs` (agentes) |
+| BFF-02 / F5 | media | Idempotencia solo tras éxito completo: padre creada + hija fallida + reintento → dos padres | Claves hacia Paperclip derivadas de la `Idempotency-Key` (`mc:` + SHA-256) para padre e hijas; título estable; plan sin duplicar | `hardening.test.mjs` (idempotencia: 4 `createIssue`, 2 issues) |
+| BFF-03 | media | Demo: borrar el agente asignado → `approve`/`request-changes`/`rerun` 500 | 409 `assignee_missing` | prueba demo |
+| BFF-04 / UI-04 | baja/media | `agentDefaults` desalineado entre contrato, BFF y UI (`maxConcurrentRuns` ignorado, `timeoutSec` fuera del contrato, "0 = sin tope" falso) | Contrato con los 4 campos; BFF los persiste (1..8, ≥10 s) y los envía a Paperclip; UI con mínimos reales y aviso | prueba de ajustes + `lib.misc.test.mjs` |
+| BFF-05 | baja | Hijas del detalle con tokens/duración 0 | Mapa de runs de toda la empresa para las hijas | prueba de detalle (90 s, 12 000 tokens) |
+| F1 | alta | `approvePlan` marcaba el plan aprobado antes del PATCH: con Paperclip caído, misión irrecuperable | Primero Paperclip, después SQLite | prueba (fallo → sigue pendiente → reintento OK) |
+| F2 | media | `rerun` dejaba la issue `in_progress` sin run si el wakeup fallaba | Revertir al estado previo y liberar el candado | prueba (blocked → fallo → blocked → OK) |
+| F3 | media | `stop` tragaba el error de `/issues/{id}/runs` y cancelaba sin parar el run | Respaldo con los runs de la empresa; si ambos fallan, 503 sin marcar | 2 pruebas |
+| F4 | baja | Misión detenida con plan pendiente contaba como aprobación pendiente para siempre | Al detener se cierra el plan; `approvalPending` y `overview.pendingApprovals` ignoran misiones terminales | prueba (overview 1 → 0) |
+| F6 | baja | Primer reintento del latido a 2× intervalo → oscilación online/stale | `2 ** (fallos − 1)` | `node-agent.test.mjs` (30 s, 60 s, …) |
+| F7 | baja | Secretos de laboratorio acumulados (sin `DELETE` en este build) | **No corregible por API**: documentado en `tests/README.md`; `lab/e2e.mjs` acepta `HERMES_SECRET_ID` y prefija `[e2e]` | — |
+| UI-01 | alta | Mapa de calor: fila 0 (domingo UTC) rotulada «Lun», horas UTC como locales | Rotación a lunes-primero, rótulos «horas UTC», fixtures con domingo=0, contrato documentado | `lib.misc.test.mjs` |
+| UI-02 | alta | Modo degradado solo si fallaba la primera carga de `/health` | `degraded` por el último error aunque haya datos; banda «últimos conocidos (hh:mm)»; refresco al recuperar | `degraded.test.mjs` |
+| UI-03 | media | Sin resincronizar tras reconectar el SSE | Refresco de misiones/agentes/equipos/actividad al reconectar; vigilante de latido SSE de 75 s; sondeo cada 30 s mientras no haya flujo | prueba de `resyncAfterStream` |
+| UI-05..09 | baja | Alternador de tema leído del DOM; pestañas sin foco; paginación truncada sin aviso; asistentes sin estado de error; clave de idempotencia fija | Corregidos (ver informe del constructor en `CONTINUIDAD.md`); el 409 ahora llega como `idempotency_key_conflict` en el nivel principal del error | pruebas en `apps/ui/test` (44/44); pestañas: solo manual |
+| T1 | alta | `pnpm test` fallaba en clon limpio (`@mc/tests` sin dependencia del mock) | `devDependencies: @mc/hermes-mock`, `pretest` y `test` raíz = `build && test` | batería completa abajo |
+| T2 | media | El informe de fallos pisaba la evidencia versionada en ejecuciones parciales | Siempre a `lab/.runtime/`; a `docs/evidencias/` solo con 8/8 sin aserciones fallidas o `MC_FALLOS_REPORT` | — (código) |
+| T3–T7 | baja | Evidencia desactualizada; aserción tautológica; misión en vivo sin limpiar; secreto e2e; prueba del cliente atada a ids/variables | Corregidos: tabla y línea 80 de este archivo; diagnóstico en vez de `|| true`; `after()` cancela la misión (salvo `MC_LIVE_KEEP=1`); `HERMES_SECRET_ID`; `MC_PAPERCLIP_URL`/ids por entorno y umbrales relajados | en vivo abajo |
+
+**Comprobación contra un servidor real del BFF** (árbol corregido, modo demo, puerto efímero, `curl`):
+
+```text
+latido baseUrl http://169.254.169.254/latest    → 400
+latido baseUrl https://attacker.example         → 400
+latido baseUrl http://user:pw@127.0.0.1:8642    → 400
+latido baseUrl https://mac.tail1234.ts.net      → 200
+latido baseUrl http://100.101.102.103:8642      → 200
+POST comando text/plain + Origin ajeno          → 403 forbidden_origin
+POST comando text/plain sin Origin              → 415 unsupported_media_type
+POST comando JSON + Sec-Fetch-Site cross-site   → 403
+POST comando JSON mismo origen                  → 200 (simulado)
+GET settings Host evil.example                  → 403 forbidden_host
+GET settings Host localhost / 100.64.0.9:3300   → 200
+POST docs 3 MiB                                 → 413 payload_too_large
+POST plan/approve sin cuerpo ni Content-Type    → 200
+```
+
+**Batería tras las correcciones** (`pnpm test` raíz = build + test, sin variables de laboratorio): contracts 0, ui **44/44**, paperclip-client 16 + 15 omitidas, catalog 16, node-agent 20, hermes-mock 26, tests 9, bff **56/56** → **202 pruebas, 187 pasan, 15 omitidas, 0 fallan**; `pnpm -r typecheck` en verde en los 8 paquetes.
+**En vivo con el árbol corregido** (Paperclip 127.0.0.1:3101, empresa `b0d4c18c…`): BFF **6/6** (misión MIS-34: `blocked` tras 68 s con el vigilante, cancelada automáticamente al terminar); cliente **15/15** con `MC_PAPERCLIP_URL`.
+
+**Lo que esta revisión no cubre:** la dimensión de reproducibilidad (runbooks y scripts) no entregó informe; nada se ejecutó en Windows ni macOS; el modelo sigue siendo simulado.

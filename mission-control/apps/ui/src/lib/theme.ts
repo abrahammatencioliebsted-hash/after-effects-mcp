@@ -135,6 +135,11 @@ export function themeAttributes(s: LocalSettings, prefersLight: boolean): { attr
   };
 }
 
+/** true si el esquema efectivo es oscuro, derivado del estado (no del DOM, que se actualiza después del render). */
+export function isDarkScheme(s: LocalSettings, prefersLight: boolean): boolean {
+  return themeAttributes(s, prefersLight).attrs['data-scheme'] !== 'light';
+}
+
 export function applyTheme(s: LocalSettings, root?: HTMLElement): void {
   try {
     const el = root ?? document.documentElement;

@@ -12,11 +12,15 @@ export interface Resource<T> {
   /** true mientras se vuelve a pedir con datos previos en pantalla */
   reloading: boolean;
   reload: () => void;
+  /** Error del último intento (se conserva junto a `data` mientras dure; se limpia al recuperarse). */
+  lastError: ApiRequestError | Error | undefined;
+  /** Marca de tiempo (ms) de la última carga buena, solo si hay datos viejos en pantalla por un error posterior. */
+  staleSince: number | undefined;
 }
 
 /** Carga con estados explícitos. Conserva los datos anteriores mientras recarga ("refetch keeps the frame"). */
 export function useResource<T>(fetcher: () => Promise<T>, deps: DependencyList, enabled = true): Resource<T> {
-  const [state, setState] = useState<{ data?: T; error?: ApiRequestError | Error; busy: boolean }>({ busy: enabled });
+  const [state, setState] = useState<{ data?: T; error?: ApiRequestError | Error; busy: boolean; okAt?: number }>({ busy: enabled });
   const [tick, setTick] = useState(0);
   const ref = useRef(fetcher);
   ref.current = fetcher;
@@ -26,11 +30,11 @@ export function useResource<T>(fetcher: () => Promise<T>, deps: DependencyList, 
     let cancelled = false;
     setState((s) => ({ ...s, busy: true }));
     ref.current().then(
-      (data) => { if (!cancelled) setState({ data, busy: false }); },
+      (data) => { if (!cancelled) setState({ data, busy: false, okAt: Date.now() }); },
       (error: unknown) => {
         if (cancelled) return;
         const err = error instanceof Error ? error : new Error(String(error));
-        setState((s) => ({ ...(s.data !== undefined ? { data: s.data } : {}), error: err, busy: false }));
+        setState((s) => ({ ...(s.data !== undefined ? { data: s.data } : {}), ...(s.okAt !== undefined ? { okAt: s.okAt } : {}), error: err, busy: false }));
       },
     );
     return () => { cancelled = true; };
@@ -38,7 +42,7 @@ export function useResource<T>(fetcher: () => Promise<T>, deps: DependencyList, 
   }, [...deps, tick, enabled]);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { data: state.data, error: state.error, loading: state.busy && state.data === undefined && !state.error, reloading: state.busy && state.data !== undefined, reload };
+  return { data: state.data, error: state.error, loading: state.busy && state.data === undefined && !state.error, reloading: state.busy && state.data !== undefined, reload, lastError: state.error, staleSince: state.error && state.data !== undefined ? state.okAt : undefined };
 }
 
 export function useRoute(): Route {

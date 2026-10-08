@@ -50,8 +50,15 @@ try {
   } else step('Empresa reutilizada', true, companyId);
 
   // 2. Secreto + agente
-  const secret = await api('POST', `/api/companies/${companyId}/secrets`, { name: `HERMES_API_SERVER_KEY_E2E_${stamp}`, provider: 'local_encrypted', managedMode: 'paperclip_managed', value: HERMES_API_KEY, description: 'Clave del API server de Hermes (e2e). Valor nunca mostrado.' });
-  step('Secreto guardado (sin eco del valor)', !!secret.id && !JSON.stringify(secret).includes(HERMES_API_KEY), secret.id);
+  // Con HERMES_SECRET_ID se reutiliza un secreto existente (evita acumular copias cifradas de la clave real en cada ejecución).
+  let secret;
+  if (process.env.HERMES_SECRET_ID) {
+    secret = { id: process.env.HERMES_SECRET_ID };
+    step('Secreto reutilizado (HERMES_SECRET_ID)', true, secret.id);
+  } else {
+    secret = await api('POST', `/api/companies/${companyId}/secrets`, { name: `[e2e] HERMES_API_SERVER_KEY_${stamp}`, provider: 'local_encrypted', managedMode: 'paperclip_managed', value: HERMES_API_KEY, description: 'Clave del API server de Hermes (e2e). Valor nunca mostrado. Reutilízalo con HERMES_SECRET_ID; el build actual no expone DELETE de secretos.' });
+    step('Secreto guardado (sin eco del valor)', !!secret.id && !JSON.stringify(secret).includes(HERMES_API_KEY), secret.id);
+  }
   const agent = await api('POST', `/api/companies/${companyId}/agents`, {
     name: `[e2e] Ejecutor Hermes ${stamp.slice(11, 19)}`, role: 'engineer', title: 'Ejecutor e2e (Hermes real)', icon: 'terminal',
     adapterType: 'hermes_gateway',
