@@ -17,7 +17,7 @@
 //
 // Verificado en Linux (Node 24.21, paperclipai@2026.1005.0): docs/evidencias/restauracion-lab.md. NO verificado en Windows/macOS.
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, copyFileSync, chmodSync, readdirSync, createReadStream } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync, copyFileSync, chmodSync, readdirSync, readFileSync, createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { homedir, hostname, platform, tmpdir } from 'node:os';
 import { join, resolve, relative, basename, isAbsolute, sep } from 'node:path';
@@ -87,6 +87,37 @@ function extraerJson(texto) {
   try { return JSON.parse(m[0]); } catch { return null; }
 }
 
+
+// Puerto REAL del Postgres embebido (el servidor sube al siguiente libre si 54329 está ocupado y NO lo guarda en config.json;
+// `paperclipai db:backup` conecta al puerto de config.json o 54329: podría volcar OTRA base). Ver hallazgo F4 en docs/04-runbooks.
+function puertoPgReal(inst) {
+  try {
+    let texto = '';
+    if (platform() === 'win32') {
+      const r = spawnSync('powershell.exe', ['-NoProfile', '-Command', "Get-CimInstance Win32_Process -Filter \"Name='postgres.exe'\" | ForEach-Object { $_.CommandLine }"], { encoding: 'utf8' });
+      texto = r.stdout || '';
+    } else {
+      const r = spawnSync('ps', ['-ax', '-o', 'command='], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+      texto = r.stdout || '';
+    }
+    const norm = (x) => x.replace(/\\/g, '/').replace(/"/g, '').toLowerCase();
+    const aguja = norm(join(inst, 'db'));
+    for (const linea of texto.split('\n')) {
+      if (!/postgres/i.test(linea) || !/\s-D\s/.test(linea)) continue;
+      if (!norm(linea).includes(aguja)) continue;
+      const m = linea.match(/\s-p\s+(\d+)/);
+      if (m) return Number(m[1]);
+    }
+  } catch { /* sin información */ }
+  return null;
+}
+function puertoPgConfigurado(inst) {
+  try {
+    const c = JSON.parse(readFileSync(join(inst, 'config.json'), 'utf8'));
+    return Number(c?.database?.embeddedPostgresPort ?? 54329);
+  } catch { return 54329; }
+}
+
 function ultimoVolcado(dir) {
   if (!existsSync(dir)) return null;
   const l = readdirSync(dir).filter((f) => /\.sql\.gz$/.test(f)).map((f) => ({ f, t: statSync(join(dir, f)).mtimeMs })).sort((x, y) => y.t - x.t);
@@ -137,6 +168,12 @@ async function main() {
     log(`Usando volcado existente: ${volcado}`);
   } else {
     const env = { ...process.env, PAPERCLIP_INSTANCE_ID: o.instance };
+    const real = puertoPgReal(inst); const conf = puertoPgConfigurado(inst);
+    if (real === null) log(`AVISO: no se encontró el proceso postgres de esta instancia; si el servidor está parado, db:backup fallará.`);
+    else if (real !== conf && !process.env.DATABASE_URL) {
+      env.DATABASE_URL = `postgres://paperclip:paperclip@127.0.0.1:${real}/paperclip`;
+      log(`AVISO (F4): el Postgres embebido de esta instancia escucha en ${real}, pero config.json dice ${conf}: db:backup conectaría a OTRA base. Se fuerza DATABASE_URL=postgres://paperclip:***@127.0.0.1:${real}/paperclip solo para este comando.`);
+    } else log(`Puerto del Postgres embebido: ${real} (coincide con la configuración).`);
     const r = ejecutar(cmd, ['db:backup', '--json', '-d', o.dataDir], { env });
     if (r.status !== 0) fail(`db:backup falló (código ${r.status}). ¿El servidor de Paperclip está ARRIBA? El Postgres embebido solo existe mientras corre.\n${(r.stderr || '').slice(-600)}\n${(r.stdout || '').replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').slice(-600)}`);
     const j = extraerJson(r.stdout || '');

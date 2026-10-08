@@ -17,7 +17,8 @@
     "test": "node --test --test-reporter=spec \"test/**/*.test.mjs\" \"test/**/*.test.ts\"",
     "lint": "echo 'sin lint propio'",
     "dev": "tsx watch src/main.ts",
-    "start": "node dist/main.js"
+    "start": "node dist/main.js",
+    "pretest": "pnpm build"
   },
   "dependencies": {
     "@mc/contracts": "workspace:*",

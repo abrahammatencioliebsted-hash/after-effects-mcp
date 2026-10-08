@@ -112,10 +112,12 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   }
   if (!res.ok) {
     const err = payload as Partial<ApiError> | null;
+    // Un proxy de desarrollo sin BFF detrás responde 502/503/504 sin cuerpo ApiError: se trata como "sin conexión".
+    const proxyDown = !err?.code && (res.status === 502 || res.status === 503 || res.status === 504);
     throw new ApiRequestError(
-      typeof err?.error === 'string' ? err.error : `Error ${res.status} del BFF`,
+      typeof err?.error === 'string' ? err.error : proxyDown ? 'No se pudo contactar con el BFF de Mission Control.' : `Error ${res.status} del BFF`,
       res.status,
-      (err?.code as ApiError['code']) ?? 'internal',
+      proxyDown ? 'network' : ((err?.code as ApiError['code']) ?? 'internal'),
       err?.details,
     );
   }

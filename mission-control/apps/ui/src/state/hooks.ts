@@ -91,3 +91,16 @@ export function useLocalPref<T extends string>(key: string, initial: T, allowed:
   }, [key]);
   return [v, set];
 }
+
+export function useMediaQuery(query: string): boolean {
+  const [m, setM] = useState(() => (typeof matchMedia === 'function' ? matchMedia(query).matches : false));
+  useEffect(() => {
+    if (typeof matchMedia !== 'function') return;
+    const mq = matchMedia(query);
+    const on = () => setM(mq.matches);
+    on();
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, [query]);
+  return m;
+}

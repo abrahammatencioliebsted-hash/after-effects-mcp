@@ -64,7 +64,7 @@ export function activityToTimeline(activity: unknown[], actors: ActorLookup, opt
     } as const;
 
     if (action === 'issue.created') {
-      out.push({ ...base, kind: 'created', summary: `Misión creada: ${str(details.title) ?? ''}`.trim() });
+      out.push({ ...base, kind: 'created', summary: `Misión creada: ${(str(details.title) ?? '').replace(/\s·\s[0-9a-f]{6}$/, '')}`.trim() });
     } else if (action === 'issue.disposition_repair_escalated') {
       const attempts = details.attemptCount ?? details.maxAttempts;
       out.push({

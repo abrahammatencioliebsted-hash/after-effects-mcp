@@ -41,6 +41,8 @@ interface AppValue {
   stream: StreamState;
   /** true si el BFF o Paperclip no responden */
   degraded: { bff: boolean; paperclipBaseUrl?: string | undefined };
+  /** Fuerza la recarga de las listas que dependen de `live` (p. ej. tras una acción local). */
+  bump: (k: 'missions' | 'agents' | 'machines' | 'activity') => void;
   toast: (tone: Toast['tone'], text: string) => void;
   toasts: Toast[];
   dismissToast: (id: number) => void;
@@ -90,7 +92,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     pending.current = new Set();
     setLive((l) => {
       const next = { ...l };
-      for (const k of keys) if (k !== 'lastMessageMission') next[k] = (next[k] as number) + 1;
+      for (const k of keys) if (k !== 'lastMessageMission') (next as unknown as Record<string, number>)[k] = ((next as unknown as Record<string, number>)[k] ?? 0) + 1;
       return next;
     });
   }, []);
@@ -133,8 +135,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { bff: bffDown, paperclipBaseUrl: paperclipDown ? health.data?.paperclip.baseUrl : undefined };
   }, [health.error, health.data]);
 
+  const bump = useCallback((k: 'missions' | 'agents' | 'machines' | 'activity') => setLive((l) => ({ ...l, [k]: l[k] + 1 })), []);
+
   const value: AppValue = {
-    mock, local, setLocal, health, agents, settings, live, stream, degraded, toast, toasts, dismissToast,
+    mock, local, setLocal, health, agents, settings, live, stream, degraded, bump, toast, toasts, dismissToast,
     wizard,
     openWizard: (prefill) => setWizard({ open: true, prefill }),
     closeWizard: () => setWizard({ open: false }),

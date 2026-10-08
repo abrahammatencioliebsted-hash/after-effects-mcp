@@ -123,7 +123,8 @@ export function Sparkline({ values, width = 120, height = 36, ariaLabel }: { val
 
 /* ------------------------------------------------------------------ Columnas apiladas ------------------------------------------------------------------ */
 
-export interface ColSeries { key: string; name: string; color: string }
+/** `texture`: relleno rayado a 45° como canal secundario (accesibilidad: daltonismo, impresión). */
+export interface ColSeries { key: string; name: string; color: string; texture?: boolean }
 export interface ColDatum { label: string; tipLabel: string; values: Record<string, number> }
 
 /** Path de rectángulo con las dos esquinas superiores redondeadas (extremo de datos 4 px, base cuadrada). */
@@ -136,7 +137,7 @@ export function StackedColumns({ data, series, height = 200, yLabel, ariaLabel, 
   const tip = useChartTip();
   const [table, setTable] = useState(false);
   const uid = useId();
-  const W = 640, padL = 36, padR = 8, padT = 10, padB = 24;
+  const W = 640, padL = 36, padR = 8, padT = 22, padB = 24;
   const H = height;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
@@ -152,7 +153,7 @@ export function StackedColumns({ data, series, height = 200, yLabel, ariaLabel, 
       <div className="row between wrap" style={{ marginBottom: 8 }}>
         {series.length >= 2 ? (
           <div className="legend" aria-label="Leyenda">
-            {series.map((s) => <span key={s.key} className="k"><i className="sw" style={{ '--c': s.color } as CSSProperties} />{s.name}</span>)}
+            {series.map((s) => <span key={s.key} className="k"><i className={`sw${s.texture ? ' hatch' : ''}`} style={{ '--c': s.color } as CSSProperties} />{s.name}</span>)}
           </div>
         ) : <span className="muted" style={{ fontSize: '.8rem' }}>{series[0]?.name}</span>}
         <button type="button" className="btn ghost sm" onClick={() => setTable((t) => !t)} aria-pressed={table}><Icon name={table ? 'chart' : 'list'} size={14} />{table ? 'Ver gráfica' : 'Ver tabla'}</button>
@@ -167,14 +168,22 @@ export function StackedColumns({ data, series, height = 200, yLabel, ariaLabel, 
         </div>
       ) : (
         <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg" role="img" aria-label={ariaLabel} onPointerLeave={tip.hide}>
-          <title id={uid}>{ariaLabel}</title>
+          <title>{ariaLabel}</title>
+          <defs>
+            {series.filter((s) => s.texture).map((s) => (
+              <pattern key={s.key} id={`${uid}-${s.key}`} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width={6} height={6} style={{ fill: s.color, opacity: 0.28 }} />
+                <rect width={2.6} height={6} style={{ fill: s.color }} />
+              </pattern>
+            ))}
+          </defs>
           {ticks.map((t) => (
             <g key={t}>
               <line x1={padL} x2={W - padR} y1={y(t)} y2={y(t)} style={{ stroke: 'var(--line)' }} strokeWidth={1} />
               <text x={padL - 8} y={y(t) + 4} textAnchor="end">{formatValue(Math.round(t))}</text>
             </g>
           ))}
-          <text x={4} y={8} style={{ fontSize: 10 }}>{yLabel}</text>
+          <text x={padL - 8} y={10} textAnchor="end" style={{ fontSize: 10 }}>{yLabel}</text>
           {data.map((d, i) => {
             const cx = padL + slot * i + slot / 2;
             const x = cx - bw / 2;
@@ -184,7 +193,7 @@ export function StackedColumns({ data, series, height = 200, yLabel, ariaLabel, 
                 <div className="lbl">{d.tipLabel}</div>
                 {series.map((s) => (
                   <div key={s.key} className="row" style={{ gap: 8, marginTop: 4 }}>
-                    <i className="sw" style={{ width: 14, height: 3, borderRadius: 2, background: s.color, display: 'inline-block' }} />
+                    <i className={`sw${s.texture ? ' hatch' : ''}`} style={{ '--c': s.color, width: 14, height: 8, display: 'inline-block' } as CSSProperties} />
                     <b>{formatValue(d.values[s.key] ?? 0)}</b><span className="lbl">{s.name}</span>
                   </div>
                 ))}
@@ -201,9 +210,10 @@ export function StackedColumns({ data, series, height = 200, yLabel, ariaLabel, 
                   const isTop = si === segs.length - 1;
                   const gap = si === 0 ? 0 : 2; // 2 px de superficie entre segmentos
                   const hh = Math.max(1, h - gap);
+                  const fill = s.texture ? `url(#${uid}-${s.key})` : s.color;
                   return isTop
-                    ? <path key={s.key} d={topRounded(x, y0, bw, hh, 4)} style={{ fill: s.color }} className="mark" />
-                    : <rect key={s.key} x={x} y={y0 + gap} width={bw} height={hh} style={{ fill: s.color }} className="mark" />;
+                    ? <path key={s.key} d={topRounded(x, y0, bw, hh, 4)} style={{ fill }} className="mark" />
+                    : <rect key={s.key} x={x} y={y0 + gap} width={bw} height={hh} style={{ fill }} className="mark" />;
                 })}
                 <rect
                   x={padL + slot * i} y={padT} width={slot} height={innerH} fill="transparent" tabIndex={0}
@@ -255,6 +265,37 @@ export function Heatmap({ matrix, ariaLabel }: { matrix: number[][]; ariaLabel: 
         <span>Menos</span>
         {[0, 1, 2, 3, 4].map((l) => <i key={l} style={{ background: `var(--heat-${l})` }} />)}
         <span>Más (máx. {max})</span>
+      </div>
+      {tip.view}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ Franja de distribución (barra apilada horizontal) ------------------------------------------------------------------ */
+
+export interface StripPart { key: string; label: string; value: number; tone: Tone }
+
+export function StatusStrip({ parts, ariaLabel }: { parts: StripPart[]; ariaLabel: string }) {
+  const tip = useChartTip();
+  const total = parts.reduce((a, p) => a + p.value, 0);
+  const W = 400, H = 14;
+  let x = 0;
+  const visible = parts.filter((p) => p.value > 0);
+  return (
+    <div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="chart-svg" role="img" aria-label={ariaLabel} onPointerLeave={tip.hide} preserveAspectRatio="none" style={{ height: 14 }}>
+        {total === 0 && <rect x={0} y={0} width={W} height={H} rx={4} style={{ fill: 'var(--track)' }} />}
+        {visible.map((p, i) => {
+          const w = (p.value / total) * W;
+          const x0 = x;
+          x += w;
+          const gap = i === visible.length - 1 ? 0 : 2;
+          const node = <div><b>{p.value}</b> <span className="lbl">{p.label}</span></div>;
+          return <rect key={p.key} className="mark" x={x0} y={0} width={Math.max(1, w - gap)} height={H} rx={3} tabIndex={0} aria-label={`${p.label}: ${p.value}`} style={{ fill: toneVar(p.tone), outline: 'none' }} onPointerMove={(e) => tip.showAtEvent(e, node)} onFocus={(e) => tip.showAtEl(e.currentTarget, node)} onBlur={tip.hide} />;
+        })}
+      </svg>
+      <div className="legend" style={{ marginTop: 10 }}>
+        {parts.map((p) => <span key={p.key} className="k"><i className="sw" style={{ '--c': toneVar(p.tone) } as CSSProperties} />{p.label} <b className="num" style={{ color: 'var(--text)' }}>{p.value}</b></span>)}
       </div>
       {tip.view}
     </div>

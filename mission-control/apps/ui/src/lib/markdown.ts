@@ -127,7 +127,7 @@ export function parseMarkdown(src: string): Block[] {
       blocks.push({ t: 'ol', items });
       continue;
     }
-    if (line.includes('|') && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1] ?? '')) {
+    if (line.includes('|') && /^[\s:|-]*-[\s:|-]*$/.test(lines[i + 1] ?? '') && (lines[i + 1] ?? '').includes('|')) {
       const head = splitRow(line).map(parseInline);
       i += 2;
       const rows: Inline[][][] = [];

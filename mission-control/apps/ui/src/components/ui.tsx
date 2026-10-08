@@ -142,7 +142,7 @@ export function Loading({ rows = 3, label = 'Cargando…' }: { rows?: number; la
 /** Error de API: distingue Paperclip inaccesible (con la URL base) del BFF caído. */
 export function ErrorState({ error, onRetry, what = 'los datos' }: { error: unknown; onRetry?: () => void; what?: string }) {
   const e = error instanceof ApiRequestError ? error : undefined;
-  let title = `No se pudieron cargar ${what}`;
+  let title = `No se pudo cargar ${what}`;
   let body: ReactNode = error instanceof Error ? error.message : String(error);
   if (e?.code === 'paperclip_unreachable') {
     title = 'Paperclip no responde';

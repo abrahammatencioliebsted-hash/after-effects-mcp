@@ -90,7 +90,7 @@ export function createPaperclip({ baseUrl, companyId, token }) {
     createIssue: ({ title, description, agentId, priority = 'low' }) =>
       request('POST', `/api/companies/${companyId}/issues`, {
         title: withPrefix(title), description, status: 'todo', priority,
-        assigneeAgentId: agentId, reviewPolicy: 'human_only',
+        ...(agentId ? { assigneeAgentId: agentId } : {}), reviewPolicy: 'human_only',
         allowDuplicate: true,
       }),
     getIssue: (id) => request('GET', `/api/issues/${id}`),
@@ -109,7 +109,11 @@ export function createPaperclip({ baseUrl, companyId, token }) {
     runEvents: async (runId) => arr(await request('GET', `/api/heartbeat-runs/${runId}/events`), 'events'),
     runLog: async (runId) => {
       const res = await fetch(`${root}/api/heartbeat-runs/${runId}/log`, { headers });
-      return res.ok ? res.text() : `HTTP ${res.status}`;
+      if (!res.ok) return `HTTP ${res.status}`;
+      const text = await res.text();
+      // La API devuelve {runId, store, logRef, content: "<NDJSON>"}; devolvemos solo el NDJSON.
+      try { const j = JSON.parse(text); if (j && typeof j.content === 'string') return j.content; } catch { /* texto plano */ }
+      return text;
     },
     comments: async (issueId) => arr(await request('GET', `/api/issues/${issueId}/comments`), 'comments'),
     activity: async (issueId) => arr(await request('GET', `/api/issues/${issueId}/activity`), 'activity'),

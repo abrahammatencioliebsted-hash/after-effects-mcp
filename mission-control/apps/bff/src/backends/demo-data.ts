@@ -52,7 +52,7 @@ export const DEMO_AGENTS: DemoAgentSeed[] = [
   },
   {
     key: 'ops', id: 'demo-agent-operaciones', name: 'Operaciones', shortName: 'Ops', role: 'devops', title: 'Scripts, respaldos y salud de equipos',
-    platform: 'codex', adapterType: 'codex_local', machineId: 'win-laptop-2', modelLabel: 'GPT Codex', effort: 'medium', isBoss: false, budgetMonthlyCents: 1800, state: 'paused',
+    platform: 'codex', adapterType: 'codex_local', machineId: 'win-laptop-2', modelLabel: 'GPT Codex', effort: 'medium', isBoss: false, budgetMonthlyCents: 1800, state: 'available',
     voice: ['Corrí la comprobación de salud: CPU y disco dentro de umbral; GPU sin trabajos pesados.', '@{peer}: el script de respaldo termina bien en modo prueba; falta tu confirmación para activarlo.', 'El API server de Hermes responde; la latencia es normal.'],
   },
 ];
@@ -106,6 +106,7 @@ export const DEMO_MISSIONS: DemoMissionSeed[] = [
   { title: 'Informe de tokens por modelo (semana)', objective: 'Sumar tokens por modelo y estimar coste solo donde se conoce el precio.', scope: 'proyectos', agent: 'dat', caps: [] },
   { title: 'Esquema de presentación para inversionistas', objective: 'Esquema de diez láminas con mensaje central y datos de respaldo.', scope: 'trabajo', agent: 'doc', caps: [] },
   { title: 'Pruebas de reintento de ejecución', objective: 'Provocar un fallo controlado y comprobar el tope de reintentos y el escalado.', scope: 'proyectos', agent: 'rev', caps: [] },
+  { title: 'Revisión de metas del trimestre (personal)', objective: 'Cotejar las metas del trimestre con lo hecho y listar lo que conviene aplazar.', scope: 'personal', agent: 'bib', caps: [] },
 ];
 
 export const REPORT_PARAGRAPHS = [

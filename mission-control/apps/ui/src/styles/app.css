@@ -276,6 +276,7 @@ dialog.drawer[open] { animation: slide-in .24s var(--ease); }
 .legend { display: flex; flex-wrap: wrap; gap: var(--s4); font-size: .8rem; color: var(--text-2); }
 .legend .k { display: inline-flex; align-items: center; gap: 6px; }
 .legend .sw { width: 10px; height: 10px; border-radius: 3px; background: var(--c); display: inline-block; }
+.sw.hatch { background: repeating-linear-gradient(135deg, var(--c) 0 2px, color-mix(in srgb, var(--c) 28%, transparent) 2px 4px); border-radius: 2px; }
 .chart-svg { width: 100%; height: auto; display: block; overflow: visible; }
 .chart-svg text { fill: var(--text-3); font-size: 11px; font-family: var(--font); }
 .chart-tip { position: fixed; z-index: 90; pointer-events: none; background: var(--panel-3); border: 1px solid var(--line-strong); border-radius: var(--r-sm); padding: 8px 12px; box-shadow: var(--shadow); font-size: .82rem; min-width: 140px; }
@@ -286,8 +287,13 @@ dialog.drawer[open] { animation: slide-in .24s var(--ease); }
 .heat-cell:hover, .heat-cell:focus-visible { stroke: var(--text); outline: none; }
 
 .orchestra { position: relative; }
-.orch-boss { display: flex; justify-content: center; margin-bottom: var(--s5); }
-.orch-kids { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3); position: relative; }
+.orch-boss { display: flex; justify-content: center; position: relative; padding-bottom: 24px; }
+.orch-boss::after { content: ""; position: absolute; left: 50%; bottom: 0; height: 24px; width: 2px; background: var(--accent-line); }
+.orch-kids { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--s3); position: relative; padding-top: 24px; }
+.orch-kids::before { content: ""; position: absolute; top: 0; left: 12.5%; right: 12.5%; height: 2px; background: var(--accent-line); }
+.orch-kids > * { position: relative; }
+.orch-kids > *::before { content: ""; position: absolute; top: -24px; left: 50%; height: 24px; width: 2px; background: var(--accent-line); }
+@media (max-width: 900px) { .orch-kids::before, .orch-kids > *::before { display: none; } .orch-kids { padding-top: 0; } .orch-boss { padding-bottom: 12px; } .orch-boss::after { display: none; } }
 @media (max-width: 900px) { .orch-kids { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .agent-chip { display: flex; flex-direction: column; gap: 6px; padding: var(--s3) var(--s4); border: 1px solid var(--line-strong); border-radius: var(--r-md); background: var(--panel-2); text-align: left; cursor: pointer; text-decoration: none; color: var(--text); min-width: 0; }
 .agent-chip:hover { border-color: var(--accent-line); background: var(--accent-softer); }
@@ -295,9 +301,9 @@ dialog.drawer[open] { animation: slide-in .24s var(--ease); }
 .agent-chip .nm { font-weight: 700; display: flex; align-items: center; gap: 8px; }
 .hbar { height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
 .hbar > i { display: block; height: 100%; border-radius: 4px; background: var(--tone, var(--accent)); }
-.hbar-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(0, 1fr) 56px; gap: var(--s3); align-items: center; padding: 6px 0; }
+.hbar-row { display: grid; grid-template-columns: minmax(80px, 140px) minmax(0, 1fr) 88px; gap: var(--s3); align-items: center; padding: 6px 0; }
 .hbar-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hbar-row .v { text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
+.hbar-row .v { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; font-weight: 650; }
 .stat { display: flex; flex-direction: column; gap: 4px; }
 .stat .v { font-size: 1.9rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .stat .l { font-size: .8rem; color: var(--text-2); }
@@ -370,6 +376,8 @@ dialog.drawer[open] { animation: slide-in .24s var(--ease); }
 .tower.working .pulse { animation: pulse-ring 2.2s var(--ease) infinite; }
 .tower.working .pulse.b { animation-delay: 1.1s; }
 .tower.working .glow { animation: breathe 2.4s ease-in-out infinite; }
+.tower-label text { fill: var(--text); font-size: 12px; font-weight: 650; text-anchor: middle; stroke: none; }
+.tower-label text.sub { font-size: 10px; font-weight: 500; fill: var(--text-2); }
 .tower text { fill: var(--text); font-size: 12px; font-weight: 650; text-anchor: middle; paint-order: stroke; stroke: var(--panel); stroke-width: 3px; }
 .tower text.sub { font-size: 10px; font-weight: 500; fill: var(--text-2); }
 .road { stroke: var(--line); stroke-width: 1; fill: none; }
